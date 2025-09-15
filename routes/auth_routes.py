@@ -6,6 +6,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 auth_bp = Blueprint("auth", __name__)
 
+# ✅ Health check / test route
+@auth_bp.route("/", methods=["GET"])
+def auth_home():
+    return jsonify({"message": "Auth API is working!"})
+
+
 # ✅ Register new user
 @auth_bp.route("/register", methods=["POST"])
 def register():

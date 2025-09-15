@@ -4,9 +4,9 @@ class User(db.Model):
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)  # store hashed password
+    password = db.Column(db.String(200), nullable=False)
+    salary = db.Column(db.Float, default=0)
 
-    def __repr__(self):
-        return f"<User {self.username} ({self.email})>"
+    # Relationship
+    expenses = db.relationship("Expense", back_populates="user", cascade="all, delete")

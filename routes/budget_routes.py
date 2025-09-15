@@ -5,6 +5,12 @@ from models.expense import Expense
 
 budget_bp = Blueprint("budget", __name__)
 
+# ✅ Health check / test route
+@budget_bp.route("/", methods=["GET"])
+def budget_home():
+    return jsonify({"message": "Budget API is working!"})
+
+
 # ✅ Add expense
 @budget_bp.route("/add", methods=["POST"])
 def add_expense():
