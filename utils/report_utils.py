@@ -3,6 +3,7 @@ import csv
 import pandas as pd
 from fpdf import FPDF
 
+
 # Lazy import to avoid circular issues
 def get_expense_model():
     from models.expense import Expense
@@ -10,19 +11,31 @@ def get_expense_model():
 
 
 def generate_csv(expenses):
+    """Generate a CSV report as BytesIO"""
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Date", "Category", "Amount", "Description"])
 
     for expense in expenses:
-        writer.writerow([expense.date, expense.category, expense.amount, expense.description])
+        writer.writerow([
+            expense.date,
+            expense.category,
+            expense.amount,
+            expense.description
+        ])
 
     return io.BytesIO(output.getvalue().encode())
 
 
 def generate_excel(expenses):
+    """Generate an Excel report as BytesIO"""
     data = [
-        {"Date": e.date, "Category": e.category, "Amount": e.amount, "Description": e.description}
+        {
+            "Date": e.date,
+            "Category": e.category,
+            "Amount": e.amount,
+            "Description": e.description
+        }
         for e in expenses
     ]
     df = pd.DataFrame(data)
@@ -34,6 +47,7 @@ def generate_excel(expenses):
 
 
 def generate_pdf(expenses):
+    """Generate a PDF report as BytesIO"""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -54,7 +68,8 @@ def generate_pdf(expenses):
         pdf.cell(70, 10, expense.description, 1)
         pdf.ln()
 
-    output = io.BytesIO()
-    pdf.output(output)
+    # ✅ Correct way: output as string, then wrap in BytesIO
+    pdf_bytes = pdf.output(dest="S").encode("latin1")
+    output = io.BytesIO(pdf_bytes)
     output.seek(0)
     return output

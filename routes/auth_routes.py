@@ -1,36 +1,61 @@
 from flask import Blueprint, request, jsonify
+from utils.extensions import db
 from models.user import User
-from app import db
-import jwt
-from datetime import datetime, timedelta
-from config import Config
+from models.expense import Expense
+from werkzeug.security import generate_password_hash, check_password_hash
 
 auth_bp = Blueprint("auth", __name__)
 
-@auth_bp.route("/signup", methods=["POST"])
-def signup():
-    data = request.json
-    if User.query.filter_by(email=data["email"]).first():
-        return jsonify({"message": "User already exists"}), 400
+# ✅ Register new user
+@auth_bp.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
 
-    new_user = User(username=data["username"], email=data["email"])
-    new_user.set_password(data["password"])
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
 
-    db.session.add(new_user)
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
+        return jsonify({"error": "User already exists"}), 400
+
+    hashed_password = generate_password_hash(password)
+
+    user = User(email=email, password=hashed_password, salary=0)  # default salary = 0
+    db.session.add(user)
     db.session.commit()
 
-    return jsonify({"message": "User created successfully!"}), 201
+    return jsonify({"message": "User registered successfully"}), 201
 
+
+# ✅ Login
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    data = request.json
-    user = User.query.filter_by(email=data["email"]).first()
-    if not user or not user.check_password(data["password"]):
-        return jsonify({"message": "Invalid credentials"}), 401
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
 
-    token = jwt.encode(
-        {"user_id": user.id, "exp": datetime.utcnow() + timedelta(hours=24)},
-        Config.SECRET_KEY,
-        algorithm="HS256"
-    )
-    return jsonify({"token": token})
+    user = User.query.filter_by(email=email).first()
+    if not user or not check_password_hash(user.password, password):
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    return jsonify({"message": "Login successful", "email": email})
+
+
+# ✅ Get user profile (salary + expenses)
+@auth_bp.route("/user/<email>", methods=["GET"])
+def get_user(email):
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    expenses = Expense.query.filter_by(user_id=user.id).all()
+    return jsonify({
+        "email": user.email,
+        "salary": user.salary,
+        "expenses": [
+            {"id": e.id, "amount": e.amount, "description": e.description}
+            for e in expenses
+        ]
+    })
