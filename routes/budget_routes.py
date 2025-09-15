@@ -15,7 +15,6 @@ budget_bp = Blueprint("budget", __name__)
 def budget_home():
     return jsonify({"message": "Budget API is working!"})
 
-
 # ✅ Add expense
 @budget_bp.route("/add", methods=["POST"])
 def add_expense():
@@ -34,8 +33,7 @@ def add_expense():
 
     return jsonify({"message": "Expense added successfully"}), 201
 
-
-# ✅ Get all expenses
+# ✅ Get ALL expenses + salary for a user
 @budget_bp.route("/all/<email>", methods=["GET"])
 def get_expenses(email):
     user = User.query.filter_by(email=email).first()
@@ -43,11 +41,19 @@ def get_expenses(email):
         return jsonify({"error": "User not found"}), 404
 
     expenses = Expense.query.filter_by(user_id=user.id).all()
-    return jsonify([
-        {"id": e.id, "amount": e.amount, "description": e.description, "created_at": e.created_at}
-        for e in expenses
-    ])
 
+    return jsonify({
+        "salary": user.salary,
+        "expenses": [
+            {
+                "id": e.id,
+                "amount": e.amount,
+                "description": e.description,
+                "created_at": e.created_at
+            }
+            for e in expenses
+        ]
+    })
 
 # ✅ Update expense
 @budget_bp.route("/update/<int:expense_id>", methods=["PUT"])
@@ -63,7 +69,6 @@ def update_expense(expense_id):
 
     return jsonify({"message": "Expense updated successfully"})
 
-
 # ✅ Delete expense
 @budget_bp.route("/delete/<int:expense_id>", methods=["DELETE"])
 def delete_expense(expense_id):
@@ -74,7 +79,6 @@ def delete_expense(expense_id):
     db.session.delete(expense)
     db.session.commit()
     return jsonify({"message": "Expense deleted successfully"})
-
 
 # ✅ Update salary
 @budget_bp.route("/salary", methods=["PUT"])
@@ -92,8 +96,7 @@ def update_salary():
 
     return jsonify({"message": "Salary updated successfully"})
 
-
-# ✅ Reset all data
+# ✅ Reset all (clear salary + expenses)
 @budget_bp.route("/reset", methods=["POST"])
 def reset_data():
     data = request.get_json()
@@ -109,11 +112,10 @@ def reset_data():
 
     return jsonify({"message": "All data reset successfully"})
 
-
 # ✅ Monthly expenses aggregation
 @budget_bp.route("/monthly-expenses", methods=["GET"])
 def monthly_expenses():
-    email = request.args.get("email")  
+    email = request.args.get("email")
     user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -135,7 +137,6 @@ def monthly_expenses():
         for r in results
     ])
 
-
 # 📂 Export CSV
 @budget_bp.route("/download-expenses-csv", methods=["GET"])
 def download_csv():
@@ -154,7 +155,6 @@ def download_csv():
 
     return send_file(buffer, as_attachment=True, download_name="expenses.csv", mimetype="text/csv")
 
-
 # 📊 Export Excel
 @budget_bp.route("/download-expenses-excel", methods=["GET"])
 def download_excel():
@@ -171,8 +171,8 @@ def download_excel():
     df.to_excel(buffer, index=False)
     buffer.seek(0)
 
-    return send_file(buffer, as_attachment=True, download_name="expenses.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
+    return send_file(buffer, as_attachment=True, download_name="expenses.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # 📕 Export PDF
 @budget_bp.route("/download-expenses-pdf", methods=["GET"])
