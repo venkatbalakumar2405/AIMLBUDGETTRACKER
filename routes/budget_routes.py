@@ -2,77 +2,77 @@ from flask import Blueprint, request, jsonify, send_file
 from utils.extensions import db
 from models.user import User
 from models.expense import Expense
-from sqlalchemy import extract, func
-from io import BytesIO
+import io
+import csv
 import pandas as pd
-from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 budget_bp = Blueprint("budget", __name__)
 
-# ✅ Health check
-@budget_bp.route("/", methods=["GET"])
-def budget_home():
-    return jsonify({"message": "Budget API is working!"})
-
-# ✅ Add expense
-@budget_bp.route("/add", methods=["POST"])
-def add_expense():
-    data = request.get_json()
-    email = data.get("email")
-    amount = data.get("amount")
-    description = data.get("description")
-
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    expense = Expense(amount=amount, description=description, user_id=user.id)
-    db.session.add(expense)
-    db.session.commit()
-
-    return jsonify({"message": "Expense added successfully"}), 201
-
-# ✅ Get ALL expenses + salary for a user
-@budget_bp.route("/all/<email>", methods=["GET"])
-def get_expenses(email):
+# ============================
+# Get all expenses
+# ============================
+@budget_bp.route("/expenses", methods=["GET"])
+def get_expenses():
+    email = request.args.get("email")
     user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({"error": "User not found"}), 404
 
     expenses = Expense.query.filter_by(user_id=user.id).all()
+    return jsonify({"expenses": [
+        {"id": e.id, "amount": e.amount, "description": e.description}
+        for e in expenses
+    ]})
 
-    return jsonify({
-        "salary": user.salary,
-        "expenses": [
-            {
-                "id": e.id,
-                "amount": e.amount,
-                "description": e.description,
-                "created_at": e.created_at
-            }
-            for e in expenses
-        ]
-    })
 
-# ✅ Update expense
-@budget_bp.route("/update/<int:expense_id>", methods=["PUT"])
-def update_expense(expense_id):
+# ============================
+# Add a new expense
+# ============================
+@budget_bp.route("/add", methods=["POST"])
+def add_expense():
     data = request.get_json()
-    expense = Expense.query.get(expense_id)
+    email = data.get("email")
+    description = data.get("description")
+    amount = data.get("amount")
+
+    if not email or not description or amount is None:
+        return jsonify({"error": "Missing required fields"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    expense = Expense(description=description, amount=amount, user_id=user.id)
+    db.session.add(expense)
+    db.session.commit()
+
+    return jsonify({"message": "Expense added successfully"}), 201
+
+
+# ============================
+# Update an expense
+# ============================
+@budget_bp.route("/update/<int:id>", methods=["PUT"])
+def update_expense(id):
+    data = request.get_json()
+    expense = Expense.query.get(id)
     if not expense:
         return jsonify({"error": "Expense not found"}), 404
 
-    expense.amount = data.get("amount", expense.amount)
     expense.description = data.get("description", expense.description)
+    expense.amount = data.get("amount", expense.amount)
     db.session.commit()
 
     return jsonify({"message": "Expense updated successfully"})
 
-# ✅ Delete expense
-@budget_bp.route("/delete/<int:expense_id>", methods=["DELETE"])
-def delete_expense(expense_id):
-    expense = Expense.query.get(expense_id)
+
+# ============================
+# Delete an expense
+# ============================
+@budget_bp.route("/delete/<int:id>", methods=["DELETE"])
+def delete_expense(id):
+    expense = Expense.query.get(id)
     if not expense:
         return jsonify({"error": "Expense not found"}), 404
 
@@ -80,12 +80,18 @@ def delete_expense(expense_id):
     db.session.commit()
     return jsonify({"message": "Expense deleted successfully"})
 
-# ✅ Update salary
+
+# ============================
+# Update salary
+# ============================
 @budget_bp.route("/salary", methods=["PUT"])
 def update_salary():
     data = request.get_json()
     email = data.get("email")
     salary = data.get("salary")
+
+    if email is None or salary is None:
+        return jsonify({"error": "Missing email or salary"}), 400
 
     user = User.query.filter_by(email=email).first()
     if not user:
@@ -93,14 +99,19 @@ def update_salary():
 
     user.salary = salary
     db.session.commit()
-
     return jsonify({"message": "Salary updated successfully"})
 
-# ✅ Reset all (clear salary + expenses)
+
+# ============================
+# Reset salary & expenses
+# ============================
 @budget_bp.route("/reset", methods=["POST"])
-def reset_data():
+def reset_all():
     data = request.get_json()
     email = data.get("email")
+
+    if not email:
+        return jsonify({"error": "Email required"}), 400
 
     user = User.query.filter_by(email=email).first()
     if not user:
@@ -112,90 +123,54 @@ def reset_data():
 
     return jsonify({"message": "All data reset successfully"})
 
-# ✅ Monthly expenses aggregation
-@budget_bp.route("/monthly-expenses", methods=["GET"])
-def monthly_expenses():
-    email = request.args.get("email")
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
 
-    results = (
-        db.session.query(
-            extract("year", Expense.created_at).label("year"),
-            extract("month", Expense.created_at).label("month"),
-            func.sum(Expense.amount).label("total"),
-        )
-        .filter_by(user_id=user.id)
-        .group_by("year", "month")
-        .order_by("year", "month")
-        .all()
-    )
-
-    return jsonify([
-        {"year": int(r.year), "month": int(r.month), "total": float(r.total)}
-        for r in results
-    ])
-
-# 📂 Export CSV
-@budget_bp.route("/download-expenses-csv", methods=["GET"])
-def download_csv():
+# ============================
+# Download reports
+# ============================
+@budget_bp.route("/download-expenses-<format>", methods=["GET"])
+def download_report(format):
     email = request.args.get("email")
     user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({"error": "User not found"}), 404
 
     expenses = Expense.query.filter_by(user_id=user.id).all()
-    data = [{"Amount": e.amount, "Description": e.description} for e in expenses]
+    data = [{"Description": e.description, "Amount": e.amount} for e in expenses]
 
-    df = pd.DataFrame(data)
-    buffer = BytesIO()
-    df.to_csv(buffer, index=False)
-    buffer.seek(0)
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["Description", "Amount"])
+        writer.writeheader()
+        writer.writerows(data)
+        output.seek(0)
+        return send_file(io.BytesIO(output.getvalue().encode()),
+                         mimetype="text/csv",
+                         download_name="expenses.csv",
+                         as_attachment=True)
 
-    return send_file(buffer, as_attachment=True, download_name="expenses.csv", mimetype="text/csv")
+    elif format == "excel":
+        df = pd.DataFrame(data)
+        output = io.BytesIO()
+        df.to_excel(output, index=False, engine="openpyxl")
+        output.seek(0)
+        return send_file(output,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                         download_name="expenses.xlsx",
+                         as_attachment=True)
 
-# 📊 Export Excel
-@budget_bp.route("/download-expenses-excel", methods=["GET"])
-def download_excel():
-    email = request.args.get("email")
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    elif format == "pdf":
+        output = io.BytesIO()
+        p = canvas.Canvas(output)
+        p.drawString(100, 800, f"Expenses Report for {email}")
+        y = 750
+        for e in data:
+            p.drawString(100, y, f"{e['Description']} - ₹{e['Amount']}")
+            y -= 20
+        p.save()
+        output.seek(0)
+        return send_file(output,
+                         mimetype="application/pdf",
+                         download_name="expenses.pdf",
+                         as_attachment=True)
 
-    expenses = Expense.query.filter_by(user_id=user.id).all()
-    data = [{"Amount": e.amount, "Description": e.description} for e in expenses]
-
-    df = pd.DataFrame(data)
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False)
-    buffer.seek(0)
-
-    return send_file(buffer, as_attachment=True, download_name="expenses.xlsx",
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# 📕 Export PDF
-@budget_bp.route("/download-expenses-pdf", methods=["GET"])
-def download_pdf():
-    email = request.args.get("email")
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    expenses = Expense.query.filter_by(user_id=user.id).all()
-
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-
-    p.drawString(200, height - 40, "Expense Report")
-    y = height - 80
-
-    for e in expenses:
-        p.drawString(50, y, f"₹{e.amount} - {e.description}")
-        y -= 20
-
-    p.save()
-    buffer.seek(0)
-
-    return send_file(buffer, as_attachment=True, download_name="expenses.pdf", mimetype="application/pdf")
+    return jsonify({"error": "Invalid format"}), 400

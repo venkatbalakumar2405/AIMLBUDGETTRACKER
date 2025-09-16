@@ -18,8 +18,8 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Enable CORS only for React frontend
-    CORS(app, origins=["http://localhost:5173"])
+    # ✅ Enable CORS specifically for React dev server
+    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
 
     # Initialize extensions
     db.init_app(app)
@@ -30,7 +30,6 @@ def create_app():
     scheduler.init_app(app)
     scheduler.start()
 
-    # ✅ Example job: runs every day at midnight
     @scheduler.task("cron", id="daily_job", hour=0, minute=0)
     def daily_task():
         with app.app_context():
