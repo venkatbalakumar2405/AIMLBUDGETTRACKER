@@ -1,13 +1,8 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify
 from models.user import User
 from models.expense import Expense
 from utils.extensions import db
 from datetime import datetime
-import io
-import csv
-import pandas as pd
-from reportlab.pdfgen import canvas
-from sqlalchemy import extract, func
 
 budget_bp = Blueprint("budget", __name__)
 
@@ -32,6 +27,7 @@ def get_expenses():
                 "description": e.description,
                 "amount": float(e.amount),
                 "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
+                "category": e.category or "Miscellaneous"
             }
             for e in expenses
         ]
@@ -49,6 +45,7 @@ def add_expense():
         email = data.get("email")
         description = data.get("description", "")
         amount = data.get("amount")
+        category = data.get("category", "Miscellaneous")
         date_str = data.get("date")
 
         if not email or amount is None:
@@ -58,13 +55,13 @@ def add_expense():
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        # ✅ Convert amount safely
+        # ✅ Clean amount (remove ₹ and commas)
         try:
             clean_amount = float(str(amount).replace("₹", "").replace(",", "").strip())
         except ValueError:
             return jsonify({"error": "Amount must be a number"}), 400
 
-        # ✅ Parse date or default to today
+        # ✅ Handle custom date
         if date_str:
             try:
                 date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -77,7 +74,8 @@ def add_expense():
             user_id=user.id,
             description=description,
             amount=clean_amount,
-            date=date
+            date=date,
+            category=category
         )
         db.session.add(new_expense)
         db.session.commit()
@@ -100,9 +98,11 @@ def update_expense(id):
             expense.description = data["description"]
         if "amount" in data:
             try:
-                expense.amount = float(data["amount"])
+                expense.amount = float(str(data["amount"]).replace("₹", "").replace(",", "").strip())
             except ValueError:
                 return jsonify({"error": "Amount must be a number"}), 400
+        if "category" in data:
+            expense.category = data["category"]
 
         db.session.commit()
         return jsonify({"message": "Expense updated successfully"}), 200
@@ -126,93 +126,30 @@ def delete_expense(id):
         return jsonify({"error": "Server error while deleting expense"}), 500
 
 
-# ================== Reports ==================
+# ================== Budget Settings ==================
 
-@budget_bp.route("/download-expenses-csv", methods=["GET"])
-def download_csv():
+@budget_bp.route("/set-budget", methods=["PUT"])
+def set_budget():
+    """Update user budget limit (danger line)."""
     try:
-        email = request.args.get("email")
-        if not email:
-            return jsonify({"error": "Email is required"}), 400
+        data = request.get_json()
+        email = data.get("email")
+        budget_limit = data.get("budget_limit")
+
+        if not email or budget_limit is None:
+            return jsonify({"error": "Email and budget_limit are required"}), 400
 
         user = User.query.filter_by(email=email).first()
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        expenses = Expense.query.filter_by(user_id=user.id).all()
+        user.budget_limit = float(budget_limit)
+        db.session.commit()
 
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["ID", "Description", "Amount", "Date"])
-        for e in expenses:
-            writer.writerow([e.id, e.description, e.amount, e.date.strftime("%Y-%m-%d") if e.date else ""])
-
-        output.seek(0)
-        return send_file(io.BytesIO(output.getvalue().encode("utf-8")),
-                         mimetype="text/csv",
-                         as_attachment=True,
-                         download_name="expenses.csv")
+        return jsonify({"message": "Budget limit updated successfully", "budget_limit": user.budget_limit}), 200
     except Exception as e:
-        print("❌ Error in /budget/download-expenses-csv:", str(e))
-        return jsonify({"error": "Server error while generating CSV"}), 500
-
-
-@budget_bp.route("/download-expenses-excel", methods=["GET"])
-def download_excel():
-    try:
-        email = request.args.get("email")
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        expenses = Expense.query.filter_by(user_id=user.id).all()
-        data = [
-            {"Description": e.description, "Amount": float(e.amount), "Date": e.date.strftime("%Y-%m-%d")}
-            for e in expenses
-        ]
-
-        df = pd.DataFrame(data)
-        output = io.BytesIO()
-        df.to_excel(output, index=False, engine="openpyxl")
-        output.seek(0)
-
-        return send_file(output,
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                         as_attachment=True,
-                         download_name="expenses.xlsx")
-    except Exception as e:
-        print("❌ Error in /budget/download-expenses-excel:", str(e))
-        return jsonify({"error": "Server error while generating Excel"}), 500
-
-
-@budget_bp.route("/download-expenses-pdf", methods=["GET"])
-def download_pdf():
-    try:
-        email = request.args.get("email")
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        expenses = Expense.query.filter_by(user_id=user.id).all()
-        output = io.BytesIO()
-        p = canvas.Canvas(output)
-        p.drawString(100, 800, f"Expenses Report for {email}")
-
-        y = 760
-        for e in expenses:
-            p.drawString(100, y, f"{e.date.strftime('%Y-%m-%d')} | {e.description} - ₹{e.amount}")
-            y -= 20
-            if y < 50:
-                p.showPage()
-                y = 800
-
-        p.save()
-        output.seek(0)
-
-        return send_file(output, mimetype="application/pdf", as_attachment=True, download_name="expenses.pdf")
-    except Exception as e:
-        print("❌ Error in /budget/download-expenses-pdf:", str(e))
-        return jsonify({"error": "Server error while generating PDF"}), 500
+        print("❌ Error in /budget/set-budget:", str(e))
+        return jsonify({"error": "Server error while setting budget"}), 500
 
 
 # ================== Trends ==================
@@ -233,56 +170,30 @@ def get_trends():
         total_expenses = sum(e.amount for e in expenses)
         salary = user.salary or 0
         savings = salary - total_expenses if salary > 0 else 0
+        budget_limit = user.budget_limit or 0
 
         expense_list = [
-            {"date": e.date.strftime("%Y-%m-%d"), "amount": float(e.amount)}
+            {
+                "date": e.date.strftime("%Y-%m-%d"),
+                "amount": float(e.amount),
+                "category": e.category or "Miscellaneous"
+            }
             for e in expenses
         ]
 
+        # ✅ Category-wise breakdown
+        category_summary = {}
+        for e in expenses:
+            category_summary[e.category] = category_summary.get(e.category, 0) + float(e.amount)
+
         return jsonify({
             "salary": float(salary),
+            "budget_limit": float(budget_limit),
             "total_expenses": float(total_expenses),
             "savings": float(savings),
-            "expenses": expense_list
+            "expenses": expense_list,
+            "category_summary": category_summary
         }), 200
     except Exception as e:
         print("❌ Error in /budget/trends:", str(e))
         return jsonify({"error": "Server error while fetching trends"}), 500
-
-
-@budget_bp.route("/monthly-trends", methods=["GET"])
-def get_monthly_trends():
-    try:
-        email = request.args.get("email")
-        if not email:
-            return jsonify({"error": "Email is required"}), 400
-
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        # Group by year + month
-        monthly_data = (
-            db.session.query(
-                extract("year", Expense.date).label("year"),
-                extract("month", Expense.date).label("month"),
-                func.sum(Expense.amount).label("total")
-            )
-            .filter(Expense.user_id == user.id)
-            .group_by("year", "month")
-            .order_by("year", "month")
-            .all()
-        )
-
-        result = [
-            {
-                "month": f"{int(m)}-{int(y)}",
-                "total": float(total)
-            }
-            for y, m, total in monthly_data
-        ]
-
-        return jsonify(result), 200
-    except Exception as e:
-        print("❌ Error in /budget/monthly-trends:", str(e))
-        return jsonify({"error": "Server error while fetching monthly trends"}), 500
