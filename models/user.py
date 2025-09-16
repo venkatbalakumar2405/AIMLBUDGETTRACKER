@@ -8,5 +8,10 @@ class User(db.Model):
     password = db.Column(db.String(200), nullable=False)
     salary = db.Column(db.Float, default=0)
 
-    # Relationship
-    expenses = db.relationship("Expense", back_populates="user", cascade="all, delete")
+    # ✅ Relationship (must match Expense.user)
+    expenses = db.relationship(
+        "Expense",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy=True
+    )
