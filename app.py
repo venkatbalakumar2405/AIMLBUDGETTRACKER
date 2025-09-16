@@ -1,4 +1,5 @@
-from flask import Flask, jsonify
+import os
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from config import Config
 from utils.extensions import db, migrate, mail, scheduler
@@ -18,26 +19,24 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # ✅ CORS setup
-    if app.config.get("ENV") == "production":
-        allowed_origins = [
-            "https://myapp.com",  # 🔒 production frontend
-        ]
-    else:
-        allowed_origins = [
-            "http://localhost:5173",  # vite default
-            "http://localhost:5176",  # your case
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:5176",
-        ]
-
+    # ✅ Dynamic CORS setup
     CORS(
         app,
-        resources={r"/*": {"origins": allowed_origins}},
+        resources={r"/*": {"origins": "*"}},  # Allow all origins
         supports_credentials=True,
         allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     )
+
+    # Optional: tighten security in production
+    @app.after_request
+    def apply_cors_headers(response):
+        origin = request.headers.get("Origin")
+        allowed_origin = os.getenv("FRONTEND_URL", origin)  # ✅ Use env or fallback to request origin
+        if origin and allowed_origin:
+            response.headers["Access-Control-Allow-Origin"] = allowed_origin
+            response.headers["Vary"] = "Origin"
+        return response
 
     # Initialize extensions
     db.init_app(app)
@@ -58,7 +57,7 @@ def create_app():
     app.register_blueprint(budget_bp, url_prefix="/budget")
     app.register_blueprint(home_bp)
 
-    # ✅ More precise error handling
+    # ✅ Centralized error handling
     @app.errorhandler(Exception)
     def handle_exception(e):
         from werkzeug.exceptions import HTTPException
@@ -71,4 +70,10 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(host="127.0.0.1", port=5000, debug=True)
+
+    # ✅ Read host/port from environment with safe defaults
+    host = os.getenv("FLASK_RUN_HOST", "127.0.0.1")
+    port = int(os.getenv("FLASK_RUN_PORT", 5000))
+    debug = os.getenv("FLASK_DEBUG", "true").lower() in ("1", "true", "yes")
+
+    app.run(host=host, port=port, debug=debug)
