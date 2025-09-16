@@ -1,14 +1,14 @@
 from utils.extensions import db
+from datetime import datetime
 
 class Expense(db.Model):
     __tablename__ = "expenses"
 
     id = db.Column(db.Integer, primary_key=True)
+    description = db.Column(db.String(255), nullable=False)
     amount = db.Column(db.Float, nullable=False)
-    description = db.Column(db.String(255))
+    date = db.Column(db.DateTime, default=datetime.utcnow)  # ✅ New field with default timestamp
 
-    # Foreign Key to User
+    # Relationships
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-
-    # Relationship
-    user = db.relationship("User", back_populates="expenses")
+    user = db.relationship("User", backref="expenses")
