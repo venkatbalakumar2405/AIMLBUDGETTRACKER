@@ -3,7 +3,7 @@ from flask_cors import CORS
 from config import Config
 from utils.extensions import db, migrate, mail, scheduler
 
-# Import models
+# Import models (ensures they are registered with SQLAlchemy)
 from models.user import User  # noqa: F401
 from models.expense import Expense  # noqa: F401
 
@@ -14,15 +14,29 @@ from routes.home_routes import home_bp
 
 
 def create_app():
-    """Application factory pattern for Flask app."""
+    """Application factory for Flask app."""
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # ✅ Enable CORS for both 5173 & 5174 (React dev servers)
+    # ✅ CORS setup
+    if app.config.get("ENV") == "production":
+        allowed_origins = [
+            "https://myapp.com",  # 🔒 production frontend
+        ]
+    else:
+        allowed_origins = [
+            "http://localhost:5173",  # vite default
+            "http://localhost:5176",  # your case
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:5176",
+        ]
+
     CORS(
         app,
-        resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:5174"]}},
-        supports_credentials=True
+        resources={r"/*": {"origins": allowed_origins}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     )
 
     # Initialize extensions
@@ -44,9 +58,12 @@ def create_app():
     app.register_blueprint(budget_bp, url_prefix="/budget")
     app.register_blueprint(home_bp)
 
-    # ✅ Global error handler (so frontend sees real errors)
+    # ✅ More precise error handling
     @app.errorhandler(Exception)
     def handle_exception(e):
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return jsonify({"error": e.description}), e.code
         return jsonify({"error": str(e)}), 500
 
     return app

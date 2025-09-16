@@ -1,65 +1,13 @@
-from flask import Blueprint, request, jsonify
-from werkzeug.security import generate_password_hash, check_password_hash
-from utils.extensions import db
+from flask import Blueprint, jsonify
 from models.user import User
 
 auth_bp = Blueprint("auth", __name__)
 
+# ... your register and login routes ...
 
-# ✅ Register user
-@auth_bp.route("/register", methods=["POST"])
-def register():
-    try:
-        data = request.get_json()
-        email = data.get("email")
-        password = data.get("password")
-
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
-
-        # Check if user already exists
-        if User.query.filter_by(email=email).first():
-            return jsonify({"error": "User already exists"}), 400
-
-        # Create new user
-        hashed_pw = generate_password_hash(password)
-        new_user = User(email=email, password=hashed_pw, salary=0.0)
-        db.session.add(new_user)
-        db.session.commit()
-
-        return jsonify({"message": "User registered successfully", "email": email}), 201
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ✅ Login user
-@auth_bp.route("/login", methods=["POST"])
-def login():
-    try:
-        data = request.get_json()
-        email = data.get("email")
-        password = data.get("password")
-
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
-
-        user = User.query.filter_by(email=email).first()
-        if not user or not check_password_hash(user.password, password):
-            return jsonify({"error": "Invalid email or password"}), 401
-
-        return jsonify({
-            "message": "Login successful",
-            "email": user.email
-        }), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ✅ Get user profile (salary + expenses)
-@auth_bp.route("/user/<string:email>", methods=["GET"])
-def get_user_profile(email):
+# ✅ Get User Profile by Email
+@auth_bp.route("/user/<email>", methods=["GET"])
+def get_user(email):
     try:
         user = User.query.filter_by(email=email).first()
         if not user:
@@ -67,19 +15,17 @@ def get_user_profile(email):
 
         return jsonify({
             "email": user.email,
-            "salary": user.salary,
+            "salary": float(user.salary or 0),
             "expenses": [
                 {
-                    "id": exp.id,
-                    "amount": exp.amount,
-                    "category": exp.category,
-                    "date": exp.date.isoformat() if exp.date else None,
-                    "time": exp.time.isoformat() if exp.time else None,
-                    "description": exp.description,
+                    "id": e.id,
+                    "description": e.description,
+                    "amount": float(e.amount),
+                    "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
                 }
-                for exp in user.expenses
+                for e in user.expenses
             ],
         }), 200
-
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("❌ Error in /auth/user/<email>:", str(e))
+        return jsonify({"error": "Server error while fetching user"}), 500
