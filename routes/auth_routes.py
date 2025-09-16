@@ -1,68 +1,85 @@
 from flask import Blueprint, request, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
 from utils.extensions import db
 from models.user import User
-from models.expense import Expense
-from werkzeug.security import generate_password_hash, check_password_hash
 
 auth_bp = Blueprint("auth", __name__)
 
-# ✅ Health check / test route
-@auth_bp.route("/", methods=["GET"])
-def auth_home():
-    
-    return jsonify({"message": "Auth API is working!"})
 
-
-# ✅ Register new user
+# ✅ Register user
 @auth_bp.route("/register", methods=["POST"])
 def register():
-    data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
+    try:
+        data = request.get_json()
+        email = data.get("email")
+        password = data.get("password")
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
 
-    existing_user = User.query.filter_by(email=email).first()
-    if existing_user:
-        return jsonify({"error": "User already exists"}), 400
+        # Check if user already exists
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "User already exists"}), 400
 
-    hashed_password = generate_password_hash(password)
+        # Create new user
+        hashed_pw = generate_password_hash(password)
+        new_user = User(email=email, password=hashed_pw, salary=0.0)
+        db.session.add(new_user)
+        db.session.commit()
 
-    user = User(email=email, password=hashed_password, salary=0)  # default salary = 0
-    db.session.add(user)
-    db.session.commit()
+        return jsonify({"message": "User registered successfully", "email": email}), 201
 
-    return jsonify({"message": "User registered successfully"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-# ✅ Login
+# ✅ Login user
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
+    try:
+        data = request.get_json()
+        email = data.get("email")
+        password = data.get("password")
 
-    user = User.query.filter_by(email=email).first()
-    if not user or not check_password_hash(user.password, password):
-        return jsonify({"error": "Invalid email or password"}), 401
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
 
-    return jsonify({"message": "Login successful", "email": email})
+        user = User.query.filter_by(email=email).first()
+        if not user or not check_password_hash(user.password, password):
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        return jsonify({
+            "message": "Login successful",
+            "email": user.email
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ✅ Get user profile (salary + expenses)
-@auth_bp.route("/user/<email>", methods=["GET"])
-def get_user(email):
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+@auth_bp.route("/user/<string:email>", methods=["GET"])
+def get_user_profile(email):
+    try:
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
-    expenses = Expense.query.filter_by(user_id=user.id).all()
-    return jsonify({
-        "email": user.email,
-        "salary": user.salary,
-        "expenses": [
-            {"id": e.id, "amount": e.amount, "description": e.description}
-            for e in expenses
-        ]
-    })
+        return jsonify({
+            "email": user.email,
+            "salary": user.salary,
+            "expenses": [
+                {
+                    "id": exp.id,
+                    "amount": exp.amount,
+                    "category": exp.category,
+                    "date": exp.date.isoformat() if exp.date else None,
+                    "time": exp.time.isoformat() if exp.time else None,
+                    "description": exp.description,
+                }
+                for exp in user.expenses
+            ],
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
