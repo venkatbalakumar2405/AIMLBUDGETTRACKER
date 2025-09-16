@@ -1,8 +1,6 @@
 from flask import Blueprint, request, jsonify
-from utils.extensions import db
 from models.user import User
 from models.expense import Expense
-from sqlalchemy import func
 
 budget_bp = Blueprint("budget", __name__)
 
