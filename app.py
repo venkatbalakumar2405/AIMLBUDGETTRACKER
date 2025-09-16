@@ -18,8 +18,8 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Enable CORS for frontend-backend communication
-    CORS(app)
+    # Enable CORS only for React frontend
+    CORS(app, origins=["http://localhost:5173"])
 
     # Initialize extensions
     db.init_app(app)
@@ -35,10 +35,6 @@ def create_app():
     def daily_task():
         with app.app_context():
             print("✅ Daily task executed: checking expenses...")
-            # Example: later, you can query DB or send reminder email
-            # users = User.query.all()
-            # for user in users:
-            #     send_reminder(user.email)
 
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
@@ -50,4 +46,4 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=True)

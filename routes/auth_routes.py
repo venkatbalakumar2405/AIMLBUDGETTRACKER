@@ -9,6 +9,7 @@ auth_bp = Blueprint("auth", __name__)
 # ✅ Health check / test route
 @auth_bp.route("/", methods=["GET"])
 def auth_home():
+    
     return jsonify({"message": "Auth API is working!"})
 
 
