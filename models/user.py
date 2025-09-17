@@ -7,30 +7,44 @@ class User(db.Model):
     Stores salary, budget limit, and related expenses.
     """
     __tablename__ = "users"
-    __table_args__ = {"extend_existing": True}
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password = db.Column(db.String(255), nullable=False)
 
-    salary = db.Column(db.Float, default=0.0, nullable=False)
-    budget_limit = db.Column(db.Float, default=0.0, nullable=False)
+    # Budget-related fields with indexing
+    salary = db.Column(
+        db.Float,
+        nullable=False,
+        default=0.0,
+        server_default="0",
+        index=True,  # ✅ index for faster queries
+    )
+    budget_limit = db.Column(
+        db.Float,
+        nullable=False,
+        default=0.0,
+        server_default="0",
+        index=True,  # ✅ index for faster queries
+    )
 
     # Relationships
     expenses = db.relationship(
         "Expense",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy=True,
+        lazy="joined",  # eager load to avoid N+1 queries
     )
 
-    def __repr__(self):
-        return f"<User {self.email}>"
+    # ------------------ Utility Methods ------------------ #
 
-    def to_dict(self, include_expenses=False):
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email={self.email}>"
+
+    def to_dict(self, include_expenses: bool = False) -> dict:
         """
         Serialize user data into a dictionary.
-        Optionally include expenses.
+        Optionally include related expenses.
         """
         data = {
             "id": self.id,
@@ -44,7 +58,7 @@ class User(db.Model):
                 {
                     "id": e.id,
                     "description": e.description,
-                    "amount": float(e.amount),
+                    "amount": float(e.amount or 0),
                     "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
                     "category": e.category,
                 }
