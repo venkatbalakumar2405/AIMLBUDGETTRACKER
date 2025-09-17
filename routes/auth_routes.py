@@ -9,21 +9,20 @@ from functools import wraps
 
 auth_bp = Blueprint("auth", __name__)
 
-
 # ================== HELPER FUNCTIONS ==================
 
 def generate_token(user_id: int, expires_in_hours: int = None) -> str:
-    """Generate a JWT token for a user."""
+    """Generate a JWT token for a user with expiration."""
     exp_hours = expires_in_hours or int(os.getenv("JWT_EXP_HOURS", 12))
+    secret_key = current_app.config.get("SECRET_KEY")
+
+    if not secret_key:
+        raise RuntimeError("SECRET_KEY is missing in app config")
 
     payload = {
         "user_id": user_id,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=exp_hours),
     }
-
-    secret_key = current_app.config.get("SECRET_KEY")
-    if not secret_key:
-        raise RuntimeError("SECRET_KEY is missing in app config")
 
     token = jwt.encode(payload, secret_key, algorithm="HS256")
     return token if isinstance(token, str) else token.decode("utf-8")
@@ -42,12 +41,12 @@ def token_required(f):
             return jsonify({"error": "Token is missing"}), 401
 
         try:
-            data = jwt.decode(
+            decoded = jwt.decode(
                 token,
                 current_app.config["SECRET_KEY"],
                 algorithms=["HS256"]
             )
-            user = User.query.get(data.get("user_id"))
+            user = User.query.get(decoded.get("user_id"))
 
             if not user:
                 return jsonify({"error": "Invalid token user"}), 401
@@ -93,8 +92,8 @@ def register():
         new_user = User(
             email=email,
             password=hashed_password,
-            salary=float(data.get("salary", 0)),
-            budget_limit=float(data.get("budget_limit", 0)),
+            salary=float(data.get("salary", 0.0)),
+            budget_limit=float(data.get("budget_limit", 0.0)),
         )
 
         db.session.add(new_user)
@@ -106,12 +105,15 @@ def register():
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception(f"❌ Error in /auth/register: {e}")
-        return jsonify({"error": "Server error while registering user"}), 500
+        return jsonify({
+            "error": "Server error while registering user",
+            "details": str(e)
+        }), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    """Login with email and password to receive a JWT access & refresh token."""
+    """Login with email and password to receive JWT access & refresh tokens."""
     data, error_response, status = get_request_data(["email", "password"])
     if error_response:
         return error_response, status
@@ -120,7 +122,11 @@ def login():
         email, password = data["email"].lower().strip(), data["password"]
 
         user = User.query.filter_by(email=email).first()
-        if not user or not check_password_hash(user.password, password):
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        if not check_password_hash(user.password, password):
+            current_app.logger.warning(f"❌ Invalid password attempt for {email}")
             return jsonify({"error": "Invalid email or password"}), 401
 
         access_token = generate_token(user.id, expires_in_hours=1)   # short-lived
@@ -136,7 +142,10 @@ def login():
 
     except Exception as e:
         current_app.logger.exception(f"❌ Error in /auth/login: {e}")
-        return jsonify({"error": "Server error while logging in"}), 500
+        return jsonify({
+            "error": "Server error while logging in",
+            "details": str(e)
+        }), 500
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -147,25 +156,19 @@ def refresh_token():
         return error_response, status
 
     try:
-        token = data["refresh_token"]
-
         decoded = jwt.decode(
-            token,
+            data["refresh_token"],
             current_app.config["SECRET_KEY"],
             algorithms=["HS256"]
         )
-        user_id = decoded.get("user_id")
-        user = User.query.get(user_id)
+        user = User.query.get(decoded.get("user_id"))
 
         if not user:
             return jsonify({"error": "Invalid refresh token"}), 401
 
-        # issue new access token
         new_access_token = generate_token(user.id, expires_in_hours=1)
 
-        return jsonify({
-            "access_token": new_access_token
-        }), 200
+        return jsonify({"access_token": new_access_token}), 200
 
     except jwt.ExpiredSignatureError:
         return jsonify({"error": "Refresh token expired, please login again"}), 401
@@ -173,7 +176,10 @@ def refresh_token():
         return jsonify({"error": "Invalid refresh token"}), 401
     except Exception as e:
         current_app.logger.exception(f"❌ Error in /auth/refresh: {e}")
-        return jsonify({"error": "Server error while refreshing token"}), 500
+        return jsonify({
+            "error": "Server error while refreshing token",
+            "details": str(e)
+        }), 500
 
 
 # ================== USER PROFILE ==================
@@ -204,4 +210,7 @@ def get_user(current_user, email):
 
     except Exception as e:
         current_app.logger.exception(f"❌ Error in /auth/user/<email>: {e}")
-        return jsonify({"error": "Server error while fetching user"}), 500
+        return jsonify({
+            "error": "Server error while fetching user",
+            "details": str(e)
+        }), 500
