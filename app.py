@@ -1,11 +1,10 @@
-import os
 import logging
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from config import Config
 from utils.extensions import db, migrate, mail, scheduler
 
-# Import models (needed so SQLAlchemy is aware of them)
+# Import models so SQLAlchemy is aware
 from models.user import User  # noqa: F401
 from models.expense import Expense  # noqa: F401
 
@@ -68,8 +67,8 @@ def _initialize_extensions(app):
 
 
 def _configure_cors(app):
-    """Configure CORS with dynamic frontend origin."""
-    frontend_url = os.getenv("FRONTEND_URL", "*")
+    """Configure CORS with frontend URL from config."""
+    frontend_url = app.config.get("FRONTEND_URL", "*")
 
     CORS(
         app,
@@ -82,7 +81,7 @@ def _configure_cors(app):
     @app.after_request
     def apply_cors_headers(response):
         origin = request.headers.get("Origin")
-        allowed_origin = os.getenv("FRONTEND_URL", origin or "*")
+        allowed_origin = frontend_url if frontend_url != "*" else origin or "*"
         if origin and allowed_origin:
             response.headers["Access-Control-Allow-Origin"] = allowed_origin
             response.headers["Access-Control-Allow-Headers"] = request.headers.get(
@@ -137,8 +136,8 @@ def _configure_scheduler(app):
 if __name__ == "__main__":
     app = create_app()
 
-    host = os.getenv("FLASK_RUN_HOST", "127.0.0.1")
-    port = int(os.getenv("FLASK_RUN_PORT", 5000))
-    debug = os.getenv("FLASK_DEBUG", "true").lower() in ("1", "true", "yes")
-
-    app.run(host=host, port=port, debug=debug)
+    app.run(
+        host=app.config.get("FLASK_RUN_HOST", "127.0.0.1"),
+        port=app.config.get("FLASK_RUN_PORT", 5000),
+        debug=app.config.get("FLASK_DEBUG", True),
+    )
