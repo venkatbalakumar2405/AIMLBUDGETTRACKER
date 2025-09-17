@@ -13,22 +13,24 @@ auth_bp = Blueprint("auth", __name__)
 # ================== HELPER FUNCTIONS ==================
 
 def generate_token(user_id: int) -> str:
-    """Generate a JWT token for the given user ID."""
-    try:
-        exp_hours = int(os.getenv("JWT_EXP_HOURS", 12))  # configurable expiry
-        payload = {
-            "user_id": user_id,
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=exp_hours),
-        }
-        token = jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
-        return token
-    except Exception:
-        current_app.logger.exception("❌ Failed to generate token")
-        raise
+    """Generate a JWT token for a user."""
+    exp_hours = int(os.getenv("JWT_EXP_HOURS", 12))  # configurable expiry
+
+    payload = {
+        "user_id": user_id,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=exp_hours),
+    }
+
+    secret_key = current_app.config.get("SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError("SECRET_KEY is missing in app config")
+
+    token = jwt.encode(payload, secret_key, algorithm="HS256")
+    return token if isinstance(token, str) else token.decode("utf-8")
 
 
 def token_required(f):
-    """Decorator to protect routes with JWT authentication."""
+    """Decorator: protect routes with JWT authentication."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
@@ -46,6 +48,7 @@ def token_required(f):
                 algorithms=["HS256"]
             )
             user = User.query.get(data.get("user_id"))
+
             if not user:
                 return jsonify({"error": "Invalid token user"}), 401
 
@@ -53,8 +56,8 @@ def token_required(f):
             return jsonify({"error": "Token has expired"}), 401
         except jwt.InvalidTokenError:
             return jsonify({"error": "Invalid token"}), 401
-        except Exception:
-            current_app.logger.exception("❌ Token validation failed")
+        except Exception as e:
+            current_app.logger.exception(f"❌ Token validation failed: {e}")
             return jsonify({"error": "Authentication failed"}), 401
 
         return f(user, *args, **kwargs)
@@ -62,7 +65,7 @@ def token_required(f):
 
 
 def get_request_data(required_fields):
-    """Helper to safely extract required fields from request JSON."""
+    """Helper: safely extract and validate request JSON data."""
     data = request.get_json(silent=True) or {}
     missing = [field for field in required_fields if not data.get(field)]
     if missing:
@@ -74,18 +77,25 @@ def get_request_data(required_fields):
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
-    try:
-        data, error_response, status = get_request_data(["email", "password"])
-        if error_response:
-            return error_response, status
+    """Register a new user with email, password, salary, and budget limit."""
+    data, error_response, status = get_request_data(["email", "password"])
+    if error_response:
+        return error_response, status
 
-        email, password = data["email"], data["password"]
+    try:
+        email, password = data["email"].lower().strip(), data["password"]
 
         if User.query.filter_by(email=email).first():
             return jsonify({"error": "User already exists"}), 400
 
         hashed_password = generate_password_hash(password)
-        new_user = User(email=email, password=hashed_password, salary=0)
+
+        new_user = User(
+            email=email,
+            password=hashed_password,
+            salary=float(data.get("salary", 0)),
+            budget_limit=float(data.get("budget_limit", 0)),
+        )
 
         db.session.add(new_user)
         db.session.commit()
@@ -93,19 +103,21 @@ def register():
         current_app.logger.info(f"✅ User registered: {email}")
         return jsonify({"message": "User registered successfully"}), 201
 
-    except Exception:
-        current_app.logger.exception("❌ Error in /auth/register")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception(f"❌ Error in /auth/register: {e}")
         return jsonify({"error": "Server error while registering user"}), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    try:
-        data, error_response, status = get_request_data(["email", "password"])
-        if error_response:
-            return error_response, status
+    """Login with email and password to receive a JWT token."""
+    data, error_response, status = get_request_data(["email", "password"])
+    if error_response:
+        return error_response, status
 
-        email, password = data["email"], data["password"]
+    try:
+        email, password = data["email"].lower().strip(), data["password"]
 
         user = User.query.filter_by(email=email).first()
         if not user or not check_password_hash(user.password, password):
@@ -116,10 +128,12 @@ def login():
         return jsonify({
             "token": token,
             "email": user.email,
+            "salary": float(user.salary or 0),
+            "budget_limit": float(user.budget_limit or 0),
         }), 200
 
-    except Exception:
-        current_app.logger.exception("❌ Error in /auth/login")
+    except Exception as e:
+        current_app.logger.exception(f"❌ Error in /auth/login: {e}")
         return jsonify({"error": "Server error while logging in"}), 500
 
 
@@ -128,25 +142,27 @@ def login():
 @auth_bp.route("/user/<email>", methods=["GET"])
 @token_required
 def get_user(current_user, email):
+    """Fetch user profile, salary, budget, and expenses (authorized only)."""
     try:
-        if current_user.email != email:
+        if current_user.email != email.lower().strip():
             return jsonify({"error": "Unauthorized access"}), 403
 
         return jsonify({
             "email": current_user.email,
             "salary": float(current_user.salary or 0),
+            "budget_limit": float(current_user.budget_limit or 0),
             "expenses": [
                 {
                     "id": e.id,
                     "description": e.description,
                     "amount": float(e.amount),
                     "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
-                    "category": e.category,
+                    "category": e.category or "Miscellaneous",
                 }
                 for e in current_user.expenses
             ],
         }), 200
 
-    except Exception:
-        current_app.logger.exception("❌ Error in /auth/user/<email>")
+    except Exception as e:
+        current_app.logger.exception(f"❌ Error in /auth/user/<email>: {e}")
         return jsonify({"error": "Server error while fetching user"}), 500
