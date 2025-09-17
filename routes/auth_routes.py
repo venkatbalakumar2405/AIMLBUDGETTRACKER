@@ -12,9 +12,9 @@ auth_bp = Blueprint("auth", __name__)
 
 # ================== HELPER FUNCTIONS ==================
 
-def generate_token(user_id: int) -> str:
+def generate_token(user_id: int, expires_in_hours: int = None) -> str:
     """Generate a JWT token for a user."""
-    exp_hours = int(os.getenv("JWT_EXP_HOURS", 12))  # configurable expiry
+    exp_hours = expires_in_hours or int(os.getenv("JWT_EXP_HOURS", 12))
 
     payload = {
         "user_id": user_id,
@@ -111,7 +111,7 @@ def register():
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    """Login with email and password to receive a JWT token."""
+    """Login with email and password to receive a JWT access & refresh token."""
     data, error_response, status = get_request_data(["email", "password"])
     if error_response:
         return error_response, status
@@ -123,10 +123,12 @@ def login():
         if not user or not check_password_hash(user.password, password):
             return jsonify({"error": "Invalid email or password"}), 401
 
-        token = generate_token(user.id)
+        access_token = generate_token(user.id, expires_in_hours=1)   # short-lived
+        refresh_token = generate_token(user.id, expires_in_hours=24) # long-lived
 
         return jsonify({
-            "token": token,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
             "email": user.email,
             "salary": float(user.salary or 0),
             "budget_limit": float(user.budget_limit or 0),
@@ -135,6 +137,43 @@ def login():
     except Exception as e:
         current_app.logger.exception(f"❌ Error in /auth/login: {e}")
         return jsonify({"error": "Server error while logging in"}), 500
+
+
+@auth_bp.route("/refresh", methods=["POST"])
+def refresh_token():
+    """Refresh access token using a valid refresh token."""
+    data, error_response, status = get_request_data(["refresh_token"])
+    if error_response:
+        return error_response, status
+
+    try:
+        token = data["refresh_token"]
+
+        decoded = jwt.decode(
+            token,
+            current_app.config["SECRET_KEY"],
+            algorithms=["HS256"]
+        )
+        user_id = decoded.get("user_id")
+        user = User.query.get(user_id)
+
+        if not user:
+            return jsonify({"error": "Invalid refresh token"}), 401
+
+        # issue new access token
+        new_access_token = generate_token(user.id, expires_in_hours=1)
+
+        return jsonify({
+            "access_token": new_access_token
+        }), 200
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Refresh token expired, please login again"}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({"error": "Invalid refresh token"}), 401
+    except Exception as e:
+        current_app.logger.exception(f"❌ Error in /auth/refresh: {e}")
+        return jsonify({"error": "Server error while refreshing token"}), 500
 
 
 # ================== USER PROFILE ==================
