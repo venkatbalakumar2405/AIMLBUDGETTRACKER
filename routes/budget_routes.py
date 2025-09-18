@@ -1,42 +1,48 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, send_file
 from models.user import User
 from models.expense import Expense
 from utils.extensions import db
 from datetime import datetime
+import io
+import csv
+import openpyxl
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 budget_bp = Blueprint("budget", __name__)
-
 
 # ================== Helpers ==================
 
 def clean_amount(value):
-    """Convert input to float safely (removes ₹, commas)."""
+    """Convert input (string/number) to float safely (removes ₹, commas)."""
     if value is None:
         return None
     try:
         return float(str(value).replace("₹", "").replace(",", "").strip())
-    except ValueError:
+    except (ValueError, TypeError):
         return None
 
 
 def parse_date(date_str):
-    """Parse date string into datetime (YYYY-MM-DD) or default to now."""
+    """Parse date string into datetime.date or return None."""
     if not date_str:
-        return datetime.utcnow()
+        return None
     try:
-        return datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
+        return datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
         return None
 
 
-def calculate_budget_usage(user):
-    """Return total expenses, budget usage percentage, and warning if exceeded."""
-    total_expenses = (
-        db.session.query(db.func.sum(Expense.amount))
-        .filter_by(user_id=user.id)
-        .scalar()
-        or 0
-    )
+def get_user(email):
+    """Fetch user by email."""
+    return User.query.filter_by(email=email).first()
+
+
+def calculate_budget_usage(user, expenses=None):
+    """Return total_expenses, usage_percent, warning."""
+    if expenses is None:
+        expenses = user.expenses
+    total_expenses = sum((e.amount or 0) for e in expenses)
     budget_limit = user.budget_limit or 0
     usage_percent = (total_expenses / budget_limit * 100) if budget_limit > 0 else None
     warning = None
@@ -45,10 +51,29 @@ def calculate_budget_usage(user):
     return float(total_expenses), round(usage_percent, 2) if usage_percent else None, warning
 
 
-def get_user_by_email(email):
-    """Fetch user or return None."""
-    return User.query.filter_by(email=email).first()
+def build_summary(user, expenses=None):
+    """Return dict with salary, budget, expenses, savings, usage_percent, category_summary."""
+    if expenses is None:
+        expenses = user.expenses or []
+    total_expenses = sum((e.amount or 0) for e in expenses)
+    salary = float(user.salary or 0)
+    budget_limit = float(user.budget_limit or 0)
+    savings = salary - total_expenses if salary > 0 else 0
+    usage_percent = (total_expenses / budget_limit * 100) if budget_limit > 0 else None
 
+    category_summary = {}
+    for e in expenses:
+        cat = e.category or "Miscellaneous"
+        category_summary[cat] = category_summary.get(cat, 0) + float(e.amount)
+
+    return {
+        "salary": salary,
+        "budget_limit": budget_limit,
+        "total_expenses": float(total_expenses),
+        "savings": float(savings),
+        "usage_percent": round(usage_percent, 2) if usage_percent else None,
+        "category_summary": category_summary,
+    }
 
 # ================== Expenses ==================
 
@@ -56,42 +81,25 @@ def get_user_by_email(email):
 def get_expenses():
     try:
         email = request.args.get("email")
-        page = int(request.args.get("page", 1))
-        per_page = min(int(request.args.get("per_page", 20)), 100)
-
         if not email:
             return jsonify({"error": "Email is required"}), 400
-
-        user = get_user_by_email(email)
+        user = get_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        pagination = Expense.query.filter_by(user_id=user.id) \
-            .order_by(Expense.date.desc()) \
-            .paginate(page=page, per_page=per_page, error_out=False)
-
+        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date.desc()).all()
         expense_list = [
             {
                 "id": e.id,
                 "description": e.description,
                 "amount": float(e.amount),
-                "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
+                "date": e.date.strftime("%Y-%m-%d"),
                 "category": e.category or "Miscellaneous",
             }
-            for e in pagination.items
+            for e in expenses
         ]
 
-        return jsonify({
-            "data": expense_list,
-            "pagination": {
-                "page": pagination.page,
-                "per_page": pagination.per_page,
-                "total_pages": pagination.pages,
-                "total_items": pagination.total,
-                "has_next": pagination.has_next,
-                "has_prev": pagination.has_prev,
-            }
-        }), 200
+        return jsonify({"data": expense_list, "summary": build_summary(user, expenses)}), 200
     except Exception as e:
         print("❌ Error in /budget/expenses:", str(e))
         return jsonify({"error": "Server error while fetching expenses"}), 500
@@ -102,17 +110,15 @@ def add_expense():
     try:
         data = request.get_json() or {}
         email = data.get("email")
-        description = data.get("description") or data.get("name", "")
+        description = data.get("description", "")
         amount = clean_amount(data.get("amount"))
         category = data.get("category", "Miscellaneous")
-        date = parse_date(data.get("date"))
+        date_obj = parse_date(data.get("date")) or datetime.utcnow().date()
 
         if not email or amount is None:
             return jsonify({"error": "Email and valid amount are required"}), 400
-        if date is None:
-            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
 
-        user = get_user_by_email(email)
+        user = get_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
@@ -120,24 +126,13 @@ def add_expense():
             user_id=user.id,
             description=description,
             amount=amount,
-            date=date,
-            category=category,
+            date=date_obj,
+            category=category
         )
         db.session.add(new_expense)
         db.session.commit()
 
-        total_expenses, usage_percent, warning = calculate_budget_usage(user)
-
-        response = {
-            "message": "Expense added successfully",
-            "total_expenses": total_expenses,
-            "budget_limit": float(user.budget_limit or 0),
-            "usage_percent": usage_percent,
-        }
-        if warning:
-            response["warning"] = warning
-
-        return jsonify(response), 201
+        return jsonify({"message": "Expense added successfully", "summary": build_summary(user)}), 201
     except Exception as e:
         db.session.rollback()
         print("❌ Error in /budget/add:", str(e))
@@ -152,18 +147,23 @@ def update_expense(id):
         if not expense:
             return jsonify({"error": "Expense not found"}), 404
 
-        if "description" in data or "name" in data:
-            expense.description = data.get("description") or data.get("name")
+        if "description" in data:
+            expense.description = data["description"]
         if "amount" in data:
             new_amount = clean_amount(data["amount"])
             if new_amount is None:
-                return jsonify({"error": "Amount must be a valid number"}), 400
+                return jsonify({"error": "Amount must be valid"}), 400
             expense.amount = new_amount
         if "category" in data:
             expense.category = data["category"]
+        if "date" in data:
+            new_date = parse_date(data["date"])
+            if new_date is None:
+                return jsonify({"error": "Invalid date format"}), 400
+            expense.date = new_date
 
         db.session.commit()
-        return jsonify({"message": "Expense updated successfully"}), 200
+        return jsonify({"message": "Expense updated successfully", "summary": build_summary(expense.user)}), 200
     except Exception as e:
         db.session.rollback()
         print("❌ Error in /budget/update:", str(e))
@@ -176,15 +176,14 @@ def delete_expense(id):
         expense = Expense.query.get(id)
         if not expense:
             return jsonify({"error": "Expense not found"}), 404
-
+        user = expense.user
         db.session.delete(expense)
         db.session.commit()
-        return jsonify({"message": "Expense deleted successfully"}), 200
+        return jsonify({"message": "Expense deleted successfully", "summary": build_summary(user)}), 200
     except Exception as e:
         db.session.rollback()
         print("❌ Error in /budget/delete:", str(e))
         return jsonify({"error": "Server error while deleting expense"}), 500
-
 
 # ================== Budget & Salary ==================
 
@@ -194,21 +193,15 @@ def set_budget():
         data = request.get_json() or {}
         email = data.get("email")
         budget_limit = clean_amount(data.get("budget_limit"))
-
         if not email or budget_limit is None:
             return jsonify({"error": "Email and valid budget_limit are required"}), 400
-
-        user = get_user_by_email(email)
+        user = get_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
         user.budget_limit = budget_limit
         db.session.commit()
-
-        return jsonify({
-            "message": "Budget limit updated successfully",
-            "budget_limit": user.budget_limit,
-        }), 200
+        return jsonify({"message": "Budget limit updated", "summary": build_summary(user)}), 200
     except Exception as e:
         db.session.rollback()
         print("❌ Error in /budget/set-budget:", str(e))
@@ -222,32 +215,28 @@ def salary():
             email = request.args.get("email")
             if not email:
                 return jsonify({"error": "Email is required"}), 400
-            user = get_user_by_email(email)
+            user = get_user(email)
             if not user:
                 return jsonify({"error": "User not found"}), 404
-            return jsonify({"salary": float(user.salary or 0)}), 200
+            return jsonify({"salary": float(user.salary or 0), "summary": build_summary(user)}), 200
 
-        # PUT → update salary
+        # PUT
         data = request.get_json() or {}
         email = data.get("email")
         new_salary = clean_amount(data.get("salary"))
-
         if not email or new_salary is None:
-            return jsonify({"error": "Email and valid salary are required"}), 400
-
-        user = get_user_by_email(email)
+            return jsonify({"error": "Email and valid salary required"}), 400
+        user = get_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
         user.salary = new_salary
         db.session.commit()
-
-        return jsonify({"message": "Salary updated successfully", "salary": user.salary}), 200
+        return jsonify({"message": "Salary updated", "summary": build_summary(user)}), 200
     except Exception as e:
         db.session.rollback()
         print("❌ Error in /budget/salary:", str(e))
         return jsonify({"error": "Server error while handling salary"}), 500
-
 
 # ================== Trends ==================
 
@@ -255,58 +244,97 @@ def salary():
 def get_trends():
     try:
         email = request.args.get("email")
-        page = int(request.args.get("page", 1))
-        per_page = min(int(request.args.get("per_page", 20)), 200)
-
         if not email:
             return jsonify({"error": "Email is required"}), 400
-
-        user = get_user_by_email(email)
+        user = get_user(email)
         if not user:
             return jsonify({"error": "User not found"}), 404
-
-        pagination = Expense.query.filter_by(user_id=user.id) \
-            .order_by(Expense.date.desc()) \
-            .paginate(page=page, per_page=per_page, error_out=False)
-
-        expenses = pagination.items
-        total_expenses = sum(e.amount for e in user.expenses)  # full sum
-        salary = user.salary or 0
-        savings = salary - total_expenses if salary > 0 else 0
-        budget_limit = user.budget_limit or 0
-        usage_percent = (total_expenses / budget_limit * 100) if budget_limit > 0 else None
-
+        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date).all()
         expense_list = [
-            {
-                "date": e.date.strftime("%Y-%m-%d"),
-                "amount": float(e.amount),
-                "category": e.category or "Miscellaneous",
-            }
+            {"date": e.date.strftime("%Y-%m-%d"), "amount": float(e.amount), "category": e.category}
             for e in expenses
         ]
-
-        # ✅ Full category breakdown
-        category_summary = {}
-        for e in user.expenses:
-            category_summary[e.category] = category_summary.get(e.category, 0) + float(e.amount)
-
-        return jsonify({
-            "salary": float(salary),
-            "budget_limit": float(budget_limit),
-            "total_expenses": float(total_expenses),
-            "savings": float(savings),
-            "usage_percent": round(usage_percent, 2) if usage_percent else None,
-            "expenses": expense_list,
-            "pagination": {
-                "page": pagination.page,
-                "per_page": pagination.per_page,
-                "total_pages": pagination.pages,
-                "total_items": pagination.total,
-                "has_next": pagination.has_next,
-                "has_prev": pagination.has_prev,
-            },
-            "category_summary": category_summary,
-        }), 200
+        return jsonify({"summary": build_summary(user, expenses), "expenses": expense_list}), 200
     except Exception as e:
         print("❌ Error in /budget/trends:", str(e))
         return jsonify({"error": "Server error while fetching trends"}), 500
+
+# ================== Export ==================
+
+@budget_bp.route("/export/csv", methods=["GET"])
+def export_csv():
+    try:
+        email = request.args.get("email")
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date).all()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Date", "Description", "Category", "Amount"])
+        for e in expenses:
+            writer.writerow([e.date.strftime("%Y-%m-%d"), e.description, e.category, float(e.amount)])
+
+        output.seek(0)
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=expenses.csv"}
+        )
+    except Exception as e:
+        print("❌ Error exporting CSV:", str(e))
+        return jsonify({"error": "CSV export failed"}), 500
+
+
+@budget_bp.route("/export/excel", methods=["GET"])
+def export_excel():
+    try:
+        email = request.args.get("email")
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date).all()
+
+        output = io.BytesIO()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["Date", "Description", "Category", "Amount"])
+        for e in expenses:
+            ws.append([e.date.strftime("%Y-%m-%d"), e.description, e.category, float(e.amount)])
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name="expenses.xlsx")
+    except Exception as e:
+        print("❌ Error exporting Excel:", str(e))
+        return jsonify({"error": "Excel export failed"}), 500
+
+
+@budget_bp.route("/export/pdf", methods=["GET"])
+def export_pdf():
+    try:
+        email = request.args.get("email")
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date).all()
+
+        output = io.BytesIO()
+        p = canvas.Canvas(output, pagesize=letter)
+        y = 750
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(50, y, "Expenses Report")
+        y -= 30
+        p.setFont("Helvetica", 10)
+        for e in expenses:
+            p.drawString(50, y, f"{e.date.strftime('%Y-%m-%d')} - {e.description} - {e.category} - {float(e.amount)}")
+            y -= 15
+            if y < 50:
+                p.showPage()
+                y = 750
+        p.save()
+        output.seek(0)
+        return send_file(output, as_attachment=True, download_name="expenses.pdf")
+    except Exception as e:
+        print("❌ Error exporting PDF:", str(e))
+        return jsonify({"error": "PDF export failed"}), 500
