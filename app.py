@@ -4,69 +4,62 @@ from flask_cors import CORS
 from config import Config
 from utils.extensions import db, migrate, mail, scheduler
 
-# Import models so SQLAlchemy is aware
+
+# Import models so SQLAlchemy is aware of them (important for migrations)
 from models.user import User  # noqa: F401
 from models.expense import Expense  # noqa: F401
 
 # Import blueprints
-from routes.auth_routes import auth_bp
+
 from routes.budget_routes import budget_bp
 from routes.home_routes import home_bp
+from routes.auth_routes import auth_bp
 
 
-def create_app():
+def create_app(config_class: type[Config] = Config) -> Flask:
     """Application factory for the Budget Tracker API."""
     app = Flask(__name__)
-    app.config.from_object(Config)
+    app.config.from_object(config_class)
 
-    # ================== LOGGING ==================
+    # ---------------- CONFIGURE APP ---------------- #
     _configure_logging(app)
-
-    # ================== EXTENSIONS ==================
     _initialize_extensions(app)
-
-    # ================== CORS CONFIG ==================
     _configure_cors(app)
-
-    # ================== BLUEPRINTS ==================
     _register_blueprints(app)
-
-    # ================== HEALTH CHECK ==================
     _register_health_check(app)
-
-    # ================== ERROR HANDLING ==================
     _register_error_handlers(app)
-
-    # ================== SCHEDULER ==================
     _configure_scheduler(app)
 
     return app
 
 
-# ---------------------- HELPERS ---------------------- #
+# ---------------- HELPERS ---------------- #
 
-def _configure_logging(app):
+def _configure_logging(app: Flask) -> None:
     """Configure logging format and level."""
+    log_level = logging.DEBUG if app.debug else logging.INFO
     logging.basicConfig(
-        level=logging.DEBUG if app.debug else logging.INFO,
+        level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    app.logger.info("✅ Logging configured")
+    app.logger.setLevel(log_level)
+    app.logger.info("✅ Logging configured (level=%s)", logging.getLevelName(log_level))
 
 
-def _initialize_extensions(app):
-    """Initialize Flask extensions."""
+def _initialize_extensions(app: Flask) -> None:
+    """Initialize Flask extensions (DB, migrations, mail, etc.)."""
     db.init_app(app)
     migrate.init_app(app, db)
     mail.init_app(app)
 
-    if app.debug:
+    # Auto-create tables only if explicitly enabled
+    if app.config.get("AUTO_CREATE_TABLES", False):
         with app.app_context():
             db.create_all()
-            app.logger.info("✅ Auto-created database tables in DEBUG mode")
+            app.logger.info("✅ Database tables auto-created")
 
 
-def _configure_cors(app):
+def _configure_cors(app: Flask) -> None:
     """Configure CORS with frontend URL from config."""
     frontend_url = app.config.get("FRONTEND_URL", "*")
 
@@ -74,40 +67,38 @@ def _configure_cors(app):
         app,
         resources={r"/*": {"origins": frontend_url}},
         supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     )
 
     @app.after_request
     def apply_cors_headers(response):
         origin = request.headers.get("Origin")
         allowed_origin = frontend_url if frontend_url != "*" else origin or "*"
-        if origin and allowed_origin:
+        if origin:
             response.headers["Access-Control-Allow-Origin"] = allowed_origin
-            response.headers["Access-Control-Allow-Headers"] = request.headers.get(
-                "Access-Control-Request-Headers", "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Headers"] = (
+                request.headers.get("Access-Control-Request-Headers", "Content-Type, Authorization")
             )
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
             response.headers["Vary"] = "Origin"
         return response
 
 
-def _register_blueprints(app):
+def _register_blueprints(app: Flask) -> None:
     """Register application blueprints."""
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(budget_bp, url_prefix="/budget")
     app.register_blueprint(home_bp)
-    app.logger.info("✅ Blueprints registered")
+    app.logger.info("✅ Blueprints registered: %s", list(app.blueprints.keys()))
 
 
-def _register_health_check(app):
+def _register_health_check(app: Flask) -> None:
     """Register health check endpoint."""
     @app.route("/health", methods=["GET"])
     def health_check():
         return jsonify({"status": "ok"}), 200
 
 
-def _register_error_handlers(app):
+def _register_error_handlers(app: Flask) -> None:
     """Global error handler for HTTP and unexpected exceptions."""
     from werkzeug.exceptions import HTTPException
 
@@ -120,7 +111,7 @@ def _register_error_handlers(app):
         return jsonify({"error": "Internal server error"}), 500
 
 
-def _configure_scheduler(app):
+def _configure_scheduler(app: Flask) -> None:
     """Initialize and configure APScheduler jobs."""
     scheduler.init_app(app)
     scheduler.start()
@@ -128,14 +119,13 @@ def _configure_scheduler(app):
     @scheduler.task("cron", id="daily_job", hour=0, minute=0)
     def daily_task():
         with app.app_context():
-            app.logger.info("✅ Daily task executed: checking expenses...")
+            app.logger.info("🕛 Daily job executed: checking expenses...")
 
 
-# ---------------------- ENTRY POINT ---------------------- #
+# ---------------- ENTRY POINT ---------------- #
 
 if __name__ == "__main__":
     app = create_app()
-
     app.run(
         host=app.config.get("FLASK_RUN_HOST", "127.0.0.1"),
         port=app.config.get("FLASK_RUN_PORT", 5000),
