@@ -7,7 +7,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-from config import Config
+from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
 from utils.extensions import db, migrate, mail, scheduler
 
 # Import models for SQLAlchemy (needed for migrations & Alembic autogenerate)
@@ -19,7 +19,7 @@ from routes.budget_routes import budget_bp
 from routes.home_routes import home_bp
 from routes.auth_routes import auth_bp
 
-# ✅ Force UTF-8 for stdout/stderr (fixes Windows console emoji crash)
+# ✅ Force UTF-8 for stdout/stderr (fixes Windows console emoji crash on PowerShell/CMD)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
@@ -55,16 +55,16 @@ def _configure_logging(app: Flask) -> None:
     logging.basicConfig(level=log_level, format=log_format)
     app.logger.setLevel(log_level)
 
-    # Logs directory comes from config (default: ./logs)
-    log_dir = app.config.get("LOG_DIR", "logs")
+    # Logs directory and file come from config
+    log_dir = app.config.get("LOG_DIR", os.getenv("LOG_DIR", "logs"))
+    log_file = app.config.get("LOG_FILE", os.getenv("LOG_FILE", "budget_tracker.log"))
     os.makedirs(log_dir, exist_ok=True)
 
-    # File logging (rotating 5 MB, keep 5 backups)
     file_handler = RotatingFileHandler(
-        os.path.join(log_dir, app.config.get("LOG_FILE", "budget_tracker.log")),
-        maxBytes=5 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8"  # ✅ ensure UTF-8 in log file too
+        os.path.join(log_dir, log_file),
+        maxBytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),  # 5 MB default
+        backupCount=int(os.getenv("LOG_BACKUP_COUNT", 5)),  # keep 5 backups
+        encoding="utf-8"
     )
     file_handler.setFormatter(logging.Formatter(log_format))
     file_handler.setLevel(log_level)
@@ -75,24 +75,22 @@ def _configure_logging(app: Flask) -> None:
 
 def _log_database_uri(app: Flask) -> None:
     """Log database URI safely (mask password & fix old postgres:// format)."""
-    db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", os.getenv("DATABASE_URL", ""))
 
     if not db_uri:
         app.logger.critical("❌ No SQLALCHEMY_DATABASE_URI configured. Exiting...")
         sys.exit(1)
 
-    # Fix old postgres:// scheme (SQLAlchemy 2.x requires postgresql://)
     if db_uri.startswith("postgres://"):
         db_uri = db_uri.replace("postgres://", "postgresql://", 1)
         app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
         app.logger.warning("⚠️ Updated DB URI prefix from postgres:// to postgresql://")
 
-    # Mask password
     safe_uri = db_uri
     if "@" in db_uri and "://" in db_uri:
         try:
             scheme, rest = db_uri.split("://", 1)
-            if ":" in rest.split("@", 1)[0]:  # has user:pass@
+            if ":" in rest.split("@", 1)[0]:  # user:pass@
                 user_pass, host_part = rest.split("@", 1)
                 user = user_pass.split(":")[0]
                 safe_uri = f"{scheme}://{user}:****@{host_part}"
@@ -108,7 +106,8 @@ def _initialize_extensions(app: Flask) -> None:
     migrate.init_app(app, db)
     mail.init_app(app)
 
-    if app.config.get("AUTO_CREATE_TABLES", False):
+    auto_create = app.config.get("AUTO_CREATE_TABLES", os.getenv("AUTO_CREATE_TABLES", "false"))
+    if str(auto_create).lower() in ("1", "true", "yes"):
         with app.app_context():
             db.create_all()
             app.logger.info("📦 Database tables auto-created")
@@ -116,7 +115,14 @@ def _initialize_extensions(app: Flask) -> None:
 
 def _configure_cors(app: Flask) -> None:
     """Configure CORS safely using Flask-CORS."""
-    allowed_origins: list[str] = app.config.get("FRONTEND_URLS", ["http://localhost:5173"])
+    default_origins = ["http://localhost:5173"]
+    allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
+
+    if isinstance(allowed_origins, str):
+        allowed_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+
+    if not allowed_origins:
+        allowed_origins = default_origins
 
     CORS(
         app,
@@ -177,10 +183,26 @@ def _configure_scheduler(app: Flask) -> None:
 # ---------------- ENTRY POINT ---------------- #
 
 if __name__ == "__main__":
-    app = create_app()
-    host = app.config.get("FLASK_RUN_HOST", "0.0.0.0")
-    port = app.config.get("FLASK_RUN_PORT", 5000)
-    debug = app.config.get("FLASK_DEBUG", True)
+    # Pick config based on APP_ENV (default: development)
+    env = os.getenv("APP_ENV", "development").lower()
+    if env == "production":
+        config_class = ProductionConfig
+    elif env == "testing":
+        config_class = TestingConfig
+    else:
+        config_class = DevelopmentConfig
+
+    app = create_app(config_class)
+
+    host = app.config.get("FLASK_RUN_HOST", os.getenv("FLASK_RUN_HOST", "0.0.0.0"))
+    port = int(app.config.get("FLASK_RUN_PORT", os.getenv("FLASK_RUN_PORT", 5000)))
+
+    # ✅ Handle FLASK_DEBUG safely (already a bool in config.py)
+    debug_config = app.config.get("FLASK_DEBUG")
+    if isinstance(debug_config, bool):
+        debug = debug_config
+    else:
+        debug = str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in ("1", "true", "yes")
 
     try:
         app.logger.info("🚀 Starting Budget Tracker API at http://%s:%s (debug=%s)", host, port, debug)

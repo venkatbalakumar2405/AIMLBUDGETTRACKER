@@ -9,7 +9,7 @@ import os
 from functools import wraps
 from routes.budget_routes import build_summary  # ✅ absolute import
 
-# 🔹 NEW: Add CORS
+# 🔹 CORS for this blueprint only
 from flask_cors import CORS
 
 auth_bp = Blueprint("auth", __name__)
@@ -65,7 +65,7 @@ def token_required(f):
         except jwt.InvalidTokenError:
             return jsonify({"error": "Invalid token"}), 401
         except Exception as e:
-            current_app.logger.exception(f"❌ Token validation failed: {e}")
+            current_app.logger.exception("❌ Token validation failed: %s", e)
             return jsonify({"error": "Authentication failed"}), 401
 
         return f(user, *args, **kwargs)
@@ -107,7 +107,7 @@ def register():
         db.session.add(new_user)
         db.session.commit()
 
-        current_app.logger.info(f"✅ User registered: {email}")
+        current_app.logger.info("✅ User registered: %s", email)
         return jsonify({
             "message": "User registered successfully",
             "user_id": new_user.id,
@@ -116,7 +116,7 @@ def register():
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.exception(f"❌ Error in /auth/register: {e}")
+        current_app.logger.exception("❌ Error in /auth/register: %s", e)
         return jsonify({"error": "Server error while registering user"}), 500
 
 
@@ -135,7 +135,7 @@ def login():
             return jsonify({"error": "User not found"}), 404
 
         if not check_password_hash(user.password, password):
-            current_app.logger.warning(f"❌ Invalid password attempt for {email}")
+            current_app.logger.warning("❌ Invalid password attempt for %s", email)
             return jsonify({"error": "Invalid email or password"}), 401
 
         access_token = generate_token(user.id, expires_in_hours=1)    # short-lived
@@ -156,7 +156,7 @@ def login():
         }), 200
 
     except Exception as e:
-        current_app.logger.exception(f"❌ Error in /auth/login: {e}")
+        current_app.logger.exception("❌ Error in /auth/login: %s", e)
         return jsonify({"error": "Server error while logging in"}), 500
 
 
@@ -185,7 +185,7 @@ def refresh_token():
     except jwt.InvalidTokenError:
         return jsonify({"error": "Invalid refresh token"}), 401
     except Exception as e:
-        current_app.logger.exception(f"❌ Error in /auth/refresh: {e}")
+        current_app.logger.exception("❌ Error in /auth/refresh: %s", e)
         return jsonify({"error": "Server error while refreshing token"}), 500
 
 
@@ -209,16 +209,16 @@ def get_user_profile(current_user, email):
             "summary": summary,
             "expenses": [
                 {
-                    "id": e.id,
-                    "description": e.description,
-                    "amount": float(e.amount),
-                    "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
-                    "category": e.category or "Miscellaneous",
+                    "id": exp.id,
+                    "description": exp.description,
+                    "amount": float(exp.amount),
+                    "date": exp.date.strftime("%Y-%m-%d %H:%M:%S") if exp.date else None,
+                    "category": exp.category or "Miscellaneous",
                 }
-                for e in expenses
+                for exp in expenses
             ],
         }), 200
 
     except Exception as e:
-        current_app.logger.exception(f"❌ Error in /auth/user/<email>: {e}")
+        current_app.logger.exception("❌ Error in /auth/user/<email>: %s", e)
         return jsonify({"error": "Server error while fetching user"}), 500

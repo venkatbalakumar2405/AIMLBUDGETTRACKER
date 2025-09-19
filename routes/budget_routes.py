@@ -4,16 +4,16 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
-# Make matplotlib safe for headless environments (no display needed)
+# Safe headless plotting
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # type: ignore
+import matplotlib.pyplot as plt
 
 from datetime import datetime
 from models.expense import Expense
-from routes.helpers import get_user, build_summary  # your helper functions
+from routes.helpers import get_user, build_summary
 
-# 🔹 NEW: add CORS support for this blueprint
+# CORS just for this blueprint
 from flask_cors import CORS
 
 budget_bp = Blueprint("budget", __name__)
@@ -24,17 +24,71 @@ CORS(
 )
 
 
-@budget_bp.route("/export/pdf", methods=["GET", "OPTIONS"])
-def export_pdf():
-    """
-    Export a detailed PDF report of a user's salary, budget, expenses,
-    category breakdown, pie chart, line chart, and expense details.
-    Query param: ?email=user@example.com
-    """
-    # ✅ Handle CORS preflight automatically
+# =========================
+# 📌 Update Salary
+# =========================
+@budget_bp.route("/salary", methods=["PUT", "OPTIONS"])
+def update_salary():
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
+    try:
+        data = request.json or {}
+        email = data.get("email")
+        salary = data.get("salary")
 
+        if not email or salary is None:
+            return jsonify({"error": "Email and salary are required"}), 400
+
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        user.salary = float(salary)
+        from app import db
+        db.session.commit()
+
+        return jsonify({"message": "Salary updated", "salary": user.salary}), 200
+    except Exception as e:
+        current_app.logger.exception("❌ Failed to update salary: %s", e)
+        return jsonify({"error": "Failed to update salary", "details": str(e)}), 500
+
+
+# =========================
+# 📌 Update Budget
+# =========================
+@budget_bp.route("/budget", methods=["PUT", "OPTIONS"])
+def update_budget():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+    try:
+        data = request.json or {}
+        email = data.get("email")
+        budget = data.get("budget")
+
+        if not email or budget is None:
+            return jsonify({"error": "Email and budget are required"}), 400
+
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        user.budget_limit = float(budget)
+        from app import db
+        db.session.commit()
+
+        return jsonify({"message": "Budget updated", "budget": user.budget_limit}), 200
+    except Exception as e:
+        current_app.logger.exception("❌ Failed to update budget: %s", e)
+        return jsonify({"error": "Failed to update budget", "details": str(e)}), 500
+
+
+# =========================
+# 📌 Export PDF Report
+# =========================
+@budget_bp.route("/export/pdf", methods=["GET", "OPTIONS"])
+def export_pdf():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
     try:
         email = request.args.get("email")
         if not email:
@@ -44,53 +98,45 @@ def export_pdf():
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        # Fetch expenses sorted by date
         expenses = (
             Expense.query.filter_by(user_id=user.id)
             .order_by(Expense.date)
             .all()
         )
-
         summary = build_summary(user, expenses)
 
-        # Create PDF in memory
+        # === Create PDF ===
         output = io.BytesIO()
         p = canvas.Canvas(output, pagesize=letter)
         width, height = letter
         y = height - 60
 
-        # === Title ===
+        # Title
         p.setFont("Helvetica-Bold", 16)
         p.drawCentredString(width / 2, y, "Expenses Report")
         y -= 40
 
-        # === Budget Summary ===
+        # Budget Summary
         p.setFont("Helvetica-Bold", 12)
         p.drawString(50, y, "Budget Summary")
         y -= 20
         p.setFont("Helvetica", 10)
 
-        keys = [
+        fields = [
             ("salary", "Salary"),
             ("budget_limit", "Budget Limit"),
             ("total_expenses", "Total Expenses"),
             ("savings", "Savings"),
             ("usage_percent", "Usage (%)"),
         ]
-
-        for field, label in keys:
-            value = summary.get(field, 0)
-            if isinstance(value, float):
-                display = f"₹{value:,.2f}"
-            elif isinstance(value, int):
-                display = f"₹{value:,}"
-            else:
-                display = str(value)
+        for field, label in fields:
+            val = summary.get(field, 0)
+            display = f"₹{val:,.2f}" if isinstance(val, (int, float)) else str(val)
             p.drawString(50, y, f"{label}: {display}")
             y -= 15
         y -= 10
 
-        # === Category Breakdown ===
+        # Category Breakdown
         p.setFont("Helvetica-Bold", 12)
         p.drawString(50, y, "Category Breakdown")
         y -= 20
@@ -98,23 +144,20 @@ def export_pdf():
 
         cat_summary = summary.get("category_summary", {}) or {}
         for cat, amt in sorted(cat_summary.items(), key=lambda x: -float(x[1] or 0)):
-            amt_val = float(amt or 0)
-            p.drawString(50, y, f"{cat}: ₹{amt_val:,.2f}")
+            p.drawString(50, y, f"{cat}: ₹{float(amt or 0):,.2f}")
             y -= 15
             if y < 220:
                 p.showPage()
                 y = height - 60
         y -= 10
 
-        # === Pie Chart ===
+        # Pie Chart
         if cat_summary:
             try:
-                fig, ax = plt.subplots()
-                labels = list(cat_summary.keys())
                 sizes = [float(v or 0) for v in cat_summary.values()]
-
-                if sum(sizes) > 0:  # avoid empty data
-                    ax.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=90)
+                if sum(sizes) > 0:
+                    fig, ax = plt.subplots()
+                    ax.pie(sizes, labels=cat_summary.keys(), autopct="%1.1f%%", startangle=90)
                     ax.set_title("Expenses by Category")
                     fig.tight_layout()
 
@@ -127,33 +170,31 @@ def export_pdf():
                         p.showPage()
                         y = height - 60
 
-                    img_w, img_h = 400, 250
-                    x_pos = (width - img_w) / 2
-                    p.drawImage(ImageReader(pie_img), x_pos, y - img_h, width=img_w, height=img_h)
-                    y -= img_h + 10
+                    p.drawImage(ImageReader(pie_img), (width-400)/2, y-250, 400, 250)
+                    y -= 260
             except Exception as e:
-                current_app.logger.exception("Pie chart generation failed: %s", e)
+                current_app.logger.exception("❌ Pie chart generation failed: %s", e)
 
-        # === Line Chart (Cumulative Expenses) ===
+        # Line Chart
         if expenses:
             try:
                 dates, amounts = [], []
-                for e in expenses:
-                    d = getattr(e, "date", None)
+                for exp in expenses:
+                    d = getattr(exp, "date", None)
                     if isinstance(d, str):
                         try:
                             d = datetime.fromisoformat(d)
                         except Exception:
                             d = None
                     dates.append(d)
-                    amounts.append(float(getattr(e, "amount", 0) or 0))
+                    amounts.append(float(getattr(exp, "amount", 0) or 0))
 
                 cum, total = [], 0.0
                 for amt in amounts:
                     total += amt
                     cum.append(total)
 
-                if len(cum) > 0:
+                if cum:
                     fig, ax = plt.subplots()
                     if any(d is None for d in dates):
                         ax.plot(range(len(cum)), cum, marker="o", linestyle="-")
@@ -176,14 +217,12 @@ def export_pdf():
                         p.showPage()
                         y = height - 60
 
-                    img_w, img_h = 400, 250
-                    x_pos = (width - img_w) / 2
-                    p.drawImage(ImageReader(line_img), x_pos, y - img_h, width=img_w, height=img_h)
-                    y -= img_h + 10
+                    p.drawImage(ImageReader(line_img), (width-400)/2, y-250, 400, 250)
+                    y -= 260
             except Exception as e:
-                current_app.logger.exception("Line chart generation failed: %s", e)
+                current_app.logger.exception("❌ Line chart generation failed: %s", e)
 
-        # === Expense Details ===
+        # Expense Details
         p.showPage()
         y = height - 60
         p.setFont("Helvetica-Bold", 12)
@@ -191,35 +230,27 @@ def export_pdf():
         y -= 20
         p.setFont("Helvetica", 10)
 
-        for e in expenses:
-            d = getattr(e, "date", None)
-            if isinstance(d, (datetime,)):
+        for exp in expenses:
+            d = getattr(exp, "date", None)
+            if isinstance(d, datetime):
                 date_str = d.strftime("%Y-%m-%d")
             else:
                 date_str = str(d) if d else "Unknown Date"
+            desc = getattr(exp, "description", getattr(exp, "name", "")) or ""
+            cat = getattr(exp, "category", "") or ""
+            amt = float(getattr(exp, "amount", 0) or 0)
 
-            desc = getattr(e, "description", getattr(e, "name", "")) or ""
-            category = getattr(e, "category", "") or ""
-            amount = float(getattr(e, "amount", 0) or 0)
-
-            line = f"{date_str} - {desc} - {category} - ₹{amount:,.2f}"
-            p.drawString(50, y, line)
+            p.drawString(50, y, f"{date_str} - {desc} - {cat} - ₹{amt:,.2f}")
             y -= 15
             if y < 50:
                 p.showPage()
                 y = height - 60
 
-        # Finish PDF
+        # Finalize PDF
         p.save()
         output.seek(0)
+        return send_file(output, as_attachment=True, download_name="expenses.pdf", mimetype="application/pdf")
 
-        return send_file(
-            output,
-            as_attachment=True,
-            download_name="expenses.pdf",
-            mimetype="application/pdf"
-        )
-
-    except Exception as exc:
-        current_app.logger.exception("❌ Error exporting PDF: %s", exc)
-        return jsonify({"error": "PDF export failed", "details": str(exc)}), 500
+    except Exception as e:
+        current_app.logger.exception("❌ Error exporting PDF: %s", e)
+        return jsonify({"error": "PDF export failed", "details": str(e)}), 500
