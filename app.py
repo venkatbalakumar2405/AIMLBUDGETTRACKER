@@ -31,9 +31,12 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
     # ---------------- CONFIGURE APP ---------------- #
     _configure_logging(app)
-    _log_database_uri(app)   # ✅ new (with fail-fast)
+    _log_database_uri(app)   # ✅ with fail-fast
     _initialize_extensions(app)
+
+    # ✅ Apply CORS *before* blueprints to fix preflight failures
     _configure_cors(app)
+
     _register_blueprints(app)
     _register_health_check(app)
     _register_error_handlers(app)
@@ -76,7 +79,7 @@ def _log_database_uri(app: Flask) -> None:
 
     if not db_uri:
         app.logger.critical("❌ No SQLALCHEMY_DATABASE_URI configured. Exiting...")
-        sys.exit(1)   # 🚨 Exit immediately
+        sys.exit(1)
 
     # Fix old postgres:// scheme (SQLAlchemy 2.x requires postgresql://)
     if db_uri.startswith("postgres://"):
@@ -121,6 +124,7 @@ def _configure_cors(app: Flask) -> None:
         supports_credentials=True,
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
+        expose_headers=["Content-Type", "Authorization"],
     )
 
     app.logger.info("🌍 CORS enabled for origins: %s", ", ".join(allowed_origins))
@@ -137,7 +141,7 @@ def _register_blueprints(app: Flask) -> None:
 
 def _register_health_check(app: Flask) -> None:
     """Register health check endpoint."""
-    @app.route("/health", methods=["GET"])
+    @app.route("/health", methods=["GET", "OPTIONS"])
     def health_check():
         return jsonify({"status": "ok"}), 200
 
