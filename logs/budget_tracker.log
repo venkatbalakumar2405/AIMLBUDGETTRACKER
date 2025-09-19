@@ -1940,3 +1940,9 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to serve
 2025-09-19 18:51:53,595 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://127.0.0.1:5173
 2025-09-19 18:51:53,606 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
 2025-09-19 18:51:53,621 [INFO] app: ⏰ Scheduler started successfully
+2025-09-19 18:55:01,435 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-19 18:55:01,436 [INFO] app: 🔗 Database URI: postgresql://postgres:****@localhost:5432/budgettracker
+2025-09-19 18:55:01,532 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://127.0.0.1:5173
+2025-09-19 18:55:01,540 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
+2025-09-19 18:55:01,547 [INFO] app: ⏰ Scheduler started successfully
+2025-09-19 18:55:01,548 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
