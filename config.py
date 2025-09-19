@@ -18,10 +18,15 @@ class Config:
     # Security
     SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey")
 
-    # Frontend / CORS
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+    # Frontend / CORS (support multiple origins via comma-separated env var)
+    _frontend_urls = os.environ.get("FRONTEND_URLS", "http://localhost:5173,http://localhost:5174")
+    FRONTEND_URLS = [url.strip() for url in _frontend_urls.split(",") if url.strip()]
 
     # Flask run settings
     FLASK_RUN_HOST = os.environ.get("FLASK_RUN_HOST", "127.0.0.1")
     FLASK_RUN_PORT = int(os.environ.get("FLASK_RUN_PORT", 5000))
     FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "true").lower() in ("1", "true", "yes")
+
+    # Logging
+    LOG_DIR = os.environ.get("LOG_DIR", "logs")
+    LOG_FILE = os.environ.get("LOG_FILE", "budget_tracker.log")
