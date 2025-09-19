@@ -28,3 +28,15 @@
 2025-09-19 15:43:19,763 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
 2025-09-19 15:43:19,830 [INFO] app: ⏰ Scheduler started successfully
 2025-09-19 15:43:19,832 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=True)
+2025-09-19 15:44:23,970 [INFO] app: 📝 Logging configured (level=INFO)
+2025-09-19 15:44:23,973 [INFO] app: 🔗 Database URI: postgresql://postgres:****@localhost:5432/budget_db
+2025-09-19 15:44:24,098 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://localhost:5174
+2025-09-19 15:44:24,107 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
+2025-09-19 15:44:24,118 [INFO] app: ⏰ Scheduler started successfully
+2025-09-19 15:44:24,119 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=True)
+2025-09-19 15:44:30,633 [INFO] app: 📝 Logging configured (level=INFO)
+2025-09-19 15:44:30,633 [INFO] app: 🔗 Database URI: postgresql://postgres:****@localhost:5432/budget_db
+2025-09-19 15:44:30,676 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://localhost:5174
+2025-09-19 15:44:30,691 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
+2025-09-19 15:44:30,704 [INFO] app: ⏰ Scheduler started successfully
+2025-09-19 15:44:30,706 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=True)
