@@ -1,27 +1,25 @@
 from flask import Blueprint, request, jsonify, current_app
-from models.user import User
-from models.expense import Expense
-from utils.extensions import db
+from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 import os
 from functools import wraps
-from routes.budget_routes import build_summary  # ✅ absolute import
 
-# 🔹 CORS for this blueprint only
-from flask_cors import CORS
+from models import User, Expense
+from utils import db
+from routes.budget_routes import build_summary  # kept as explicit import
 
+# ================== Blueprint Setup ==================
 auth_bp = Blueprint("auth", __name__)
-CORS(
-    auth_bp,
-    resources={r"/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}},
-    supports_credentials=True,
-)
+
+# Allow only frontend origins
+ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS(auth_bp, resources={r"/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
+
 
 # ================== HELPER FUNCTIONS ==================
-
-def generate_token(user_id: int, expires_in_hours: int = None) -> str:
+def generate_token(user_id: int, expires_in_hours: int | None = None) -> str:
     """Generate a JWT token for a user with expiration."""
     exp_hours = expires_in_hours or int(os.getenv("JWT_EXP_HOURS", 12))
     secret_key = current_app.config.get("SECRET_KEY")
@@ -72,7 +70,7 @@ def token_required(f):
     return decorated
 
 
-def get_request_data(required_fields):
+def get_request_data(required_fields: list[str]):
     """Helper: safely extract and validate request JSON data."""
     data = request.get_json(silent=True) or {}
     missing = [field for field in required_fields if not data.get(field)]
@@ -82,7 +80,6 @@ def get_request_data(required_fields):
 
 
 # ================== AUTH ROUTES ==================
-
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Register a new user with email, password, salary, and budget limit."""
@@ -190,10 +187,9 @@ def refresh_token():
 
 
 # ================== USER PROFILE ==================
-
 @auth_bp.route("/user/<email>", methods=["GET"])
 @token_required
-def get_user_profile(current_user, email):
+def get_user_profile(current_user, email: str):
     """Fetch user profile, salary, budget, and expenses (authorized only)."""
     try:
         if current_user.email != email.lower().strip():

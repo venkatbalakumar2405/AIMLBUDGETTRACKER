@@ -1,10 +1,14 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from datetime import datetime
-from models.user import User
-from models.expense import Expense
-from routes.budget_routes import build_summary  # ✅ absolute import
+from models import User, Expense
+from routes.budget_routes import build_summary  # still needs explicit import
 
 home_bp = Blueprint("home", __name__)
+
+# ================== API Metadata ==================
+API_NAME = "Budget Tracker API"
+API_VERSION = "1.0.0"
+
 
 # ================== Root Endpoint ==================
 @home_bp.route("/", methods=["GET"])
@@ -15,9 +19,9 @@ def home():
     """
     email: str | None = request.args.get("email")
     response: dict = {
-        "message": "Welcome to the Budget Tracker API 🚀",
+        "message": f"Welcome to the {API_NAME} 🚀",
         "status": "running",
-        "version": "1.0.0",
+        "version": API_VERSION,
         "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
     }
 
@@ -28,6 +32,7 @@ def home():
             try:
                 response["summary"] = build_summary(user, expenses)
             except Exception as e:
+                current_app.logger.error(f"Summary generation failed: {e}")
                 response["summary_error"] = f"Failed to generate summary: {str(e)}"
         else:
             response["user_error"] = f"No user found with email: {email}"
@@ -42,7 +47,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "uptime": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "version": "1.0.0",
+        "version": API_VERSION,
     }), 200
 
 
@@ -50,25 +55,15 @@ def health_check():
 @home_bp.route("/info", methods=["GET"])
 def api_info():
     """API metadata and available endpoints."""
+    endpoints = {}
+    for rule in home_bp.url_map.iter_rules():
+        if rule.endpoint != "static":
+            endpoints[rule.endpoint] = str(rule)
+
     return jsonify({
-        "api": "Budget Tracker API",
-        "version": "1.0.0",
+        "api": API_NAME,
+        "version": API_VERSION,
         "status": "running",
-        "endpoints": {
-            "root": "/",
-            "health": "/health",
-            "info": "/info",
-            "expenses": "/budget/expenses",
-            "add_expense": "/budget/add",
-            "update_expense": "/budget/update/<id>",
-            "delete_expense": "/budget/delete/<id>",
-            "salary": "/budget/salary",
-            "set_budget": "/budget/set-budget",
-            "trends": "/budget/trends",
-            "export_csv": "/budget/export/csv",
-            "export_excel": "/budget/export/excel",
-            "export_pdf": "/budget/export/pdf",
-            "export_zip": "/budget/export/zip",
-        },
+        "endpoints": endpoints,
         "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
     }), 200

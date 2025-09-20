@@ -64,6 +64,7 @@ def calculate_budget_usage(user):
 
 @budget_bp.route("/expenses", methods=["GET"])
 def get_expenses():
+    """Fetch all expenses for a user by email."""
     try:
         email = request.args.get("email")
         if not email:
@@ -73,7 +74,11 @@ def get_expenses():
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date.desc()).all()
+        expenses = (
+            Expense.query.filter_by(user_id=user.id)
+            .order_by(Expense.date.desc())
+            .all()
+        )
 
         expense_list = [
             {
@@ -94,6 +99,7 @@ def get_expenses():
 
 @budget_bp.route("/add", methods=["POST"])
 def add_expense():
+    """Update salary for a user (existing design kept for FE compatibility)."""
     try:
         data = request.get_json() or {}
         email = data.get("email")
@@ -118,6 +124,7 @@ def add_expense():
 
 @budget_bp.route("/update/<int:id>", methods=["PUT"])
 def update_expense(id):
+    """Update a single expense by ID."""
     try:
         data = request.get_json() or {}
         expense = Expense.query.get(id)
@@ -144,6 +151,7 @@ def update_expense(id):
 
 @budget_bp.route("/delete/<int:id>", methods=["DELETE"])
 def delete_expense(id):
+    """Delete an expense by ID."""
     try:
         expense = Expense.query.get(id)
         if not expense:
@@ -162,6 +170,7 @@ def delete_expense(id):
 
 @budget_bp.route("/set-budget", methods=["PUT"])
 def set_budget():
+    """Set or update a user's budget limit."""
     try:
         data = request.get_json() or {}
         email = data.get("email")
@@ -191,6 +200,7 @@ def set_budget():
 
 @budget_bp.route("/trends", methods=["GET"])
 def get_trends():
+    """Generate a PDF report of expenses with charts."""
     try:
         email = request.args.get("email")
         if not email:

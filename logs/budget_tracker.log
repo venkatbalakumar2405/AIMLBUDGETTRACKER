@@ -2135,3 +2135,21 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to serve
 2025-09-20 14:41:32,428 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://127.0.0.1:5173
 2025-09-20 14:41:32,469 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
 2025-09-20 14:41:32,484 [INFO] app: ⏰ Scheduler started successfully
+2025-09-20 14:59:43,110 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-20 14:59:43,114 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-20 14:59:43,249 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://127.0.0.1:5173
+2025-09-20 14:59:43,270 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home']
+2025-09-20 14:59:43,301 [INFO] app: ⏰ Scheduler started successfully
+2025-09-20 14:59:43,303 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-20 15:19:37,813 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-20 15:19:37,815 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-20 15:19:37,990 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://127.0.0.1:5173
+2025-09-20 15:19:38,018 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home', 'trends']
+2025-09-20 15:19:38,123 [INFO] app: ⏰ Scheduler started successfully
+2025-09-20 15:19:38,125 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-20 16:57:50,543 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-20 16:57:50,546 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-20 16:57:51,032 [INFO] app: 🌍 CORS enabled for origins: http://localhost:5173, http://127.0.0.1:5173
+2025-09-20 16:57:51,054 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home', 'trends']
+2025-09-20 16:57:51,077 [INFO] app: ⏰ Scheduler started successfully
+2025-09-20 16:57:51,078 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)

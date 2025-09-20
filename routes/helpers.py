@@ -1,4 +1,4 @@
-from models.user import User
+from models import User
 
 # ================== Helper Functions ==================
 
@@ -12,23 +12,34 @@ def get_user(email: str):
 def build_summary(user, expenses):
     """
     Build a budget summary for a user.
-    Returns a dictionary with salary, budget_limit, total expenses,
-    savings, usage percent, and category breakdown.
+
+    Returns:
+        dict: {
+            salary, budget_limit, total_expenses,
+            savings, usage_percent, category_summary
+        }
     """
     if not user:
-        return {}
+        return {
+            "salary": 0,
+            "budget_limit": 0,
+            "total_expenses": 0,
+            "savings": 0,
+            "usage_percent": 0,
+            "category_summary": {},
+        }
 
-    category_summary = {}
-    total_expenses = 0
+    category_summary: dict[str, float] = {}
+    total_expenses: float = 0.0
 
-    for e in expenses:
-        amt = float(e.amount or 0)
+    for e in expenses or []:
+        amt = float(getattr(e, "amount", 0) or 0)
+        cat = getattr(e, "category", None) or "Misc"
         total_expenses += amt
-        cat = e.category or "Misc"
         category_summary[cat] = category_summary.get(cat, 0) + amt
 
-    salary = float(user.salary or 0)
-    budget_limit = float(user.budget_limit or 0)
+    salary = float(getattr(user, "salary", 0) or 0)
+    budget_limit = float(getattr(user, "budget_limit", 0) or 0)
     savings = max(budget_limit - total_expenses, 0)
     usage_percent = (total_expenses / budget_limit * 100) if budget_limit else 0
 

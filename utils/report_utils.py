@@ -2,74 +2,114 @@ import io
 import csv
 import pandas as pd
 from fpdf import FPDF
+from typing import List, Any
 
 
-# Lazy import to avoid circular issues
+# ================== Lazy Import ==================
 def get_expense_model():
+    """
+    Lazy import to avoid circular imports.
+    Call this when you need the Expense model.
+    """
     from models.expense import Expense
     return Expense
 
 
-def generate_csv(expenses):
-    """Generate a CSV report as BytesIO"""
+# ================== CSV Report ==================
+def generate_csv(expenses: List[Any]) -> io.BytesIO:
+    """
+    Generate a CSV report from expenses.
+    
+    Args:
+        expenses: List of Expense model instances.
+    
+    Returns:
+        BytesIO containing CSV data.
+    """
+    headers = ["Date", "Category", "Amount", "Description"]
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Category", "Amount", "Description"])
+    writer.writerow(headers)
 
-    for expense in expenses:
+    for e in expenses:
         writer.writerow([
-            expense.date,
-            expense.category,
-            expense.amount,
-            expense.description
+            e.date or "",
+            e.category or "Misc",
+            e.amount or 0,
+            e.description or "",
         ])
 
-    return io.BytesIO(output.getvalue().encode())
+    buffer = io.BytesIO(output.getvalue().encode("utf-8"))
+    buffer.seek(0)
+    return buffer
 
 
-def generate_excel(expenses):
-    """Generate an Excel report as BytesIO"""
+# ================== Excel Report ==================
+def generate_excel(expenses: List[Any]) -> io.BytesIO:
+    """
+    Generate an Excel report from expenses.
+    
+    Args:
+        expenses: List of Expense model instances.
+    
+    Returns:
+        BytesIO containing Excel data.
+    """
     data = [
         {
-            "Date": e.date,
-            "Category": e.category,
-            "Amount": e.amount,
-            "Description": e.description
+            "Date": e.date or "",
+            "Category": e.category or "Misc",
+            "Amount": e.amount or 0,
+            "Description": e.description or "",
         }
         for e in expenses
     ]
     df = pd.DataFrame(data)
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False, sheet_name="Expenses")
-    output.seek(0)
-    return output
+    buffer.seek(0)
+    return buffer
 
 
-def generate_pdf(expenses):
-    """Generate a PDF report as BytesIO"""
+# ================== PDF Report ==================
+def generate_pdf(expenses: List[Any]) -> io.BytesIO:
+    """
+    Generate a PDF report from expenses.
+    
+    Args:
+        expenses: List of Expense model instances.
+    
+    Returns:
+        BytesIO containing PDF data.
+    """
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Expense Report", ln=True, align="C")
 
+    # Title
+    pdf.set_font("Arial", size=14, style="B")
+    pdf.cell(200, 10, txt="Expense Report", ln=True, align="C")
     pdf.ln(10)
-    pdf.set_font("Arial", size=10)
+
+    # Headers
+    pdf.set_font("Arial", size=10, style="B")
     pdf.cell(40, 10, "Date", 1)
     pdf.cell(40, 10, "Category", 1)
     pdf.cell(40, 10, "Amount", 1)
     pdf.cell(70, 10, "Description", 1)
     pdf.ln()
 
-    for expense in expenses:
-        pdf.cell(40, 10, str(expense.date), 1)
-        pdf.cell(40, 10, expense.category, 1)
-        pdf.cell(40, 10, str(expense.amount), 1)
-        pdf.cell(70, 10, expense.description, 1)
+    # Rows
+    pdf.set_font("Arial", size=9)
+    for e in expenses:
+        pdf.cell(40, 10, str(e.date or ""), 1)
+        pdf.cell(40, 10, str(e.category or "Misc"), 1)
+        pdf.cell(40, 10, str(e.amount or 0), 1)
+        pdf.cell(70, 10, str(e.description or ""), 1)
         pdf.ln()
 
-    # ✅ Correct way: output as string, then wrap in BytesIO
     pdf_bytes = pdf.output(dest="S").encode("latin1")
-    output = io.BytesIO(pdf_bytes)
-    output.seek(0)
-    return output
+    buffer = io.BytesIO(pdf_bytes)
+    buffer.seek(0)
+    return buffer
