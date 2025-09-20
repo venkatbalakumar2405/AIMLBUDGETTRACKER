@@ -7,22 +7,20 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, jsonify
 from flask_cors import CORS
 
+# ================== Project Imports ================== #
 from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
 from utils.extensions import db, scheduler, init_extensions
 from utils.scheduler_jobs import register_jobs
 
-# ✅ Models (needed for migrations & Alembic autogenerate)
-from models import User, Expense, Salary  # noqa: F401
-
-# ✅ Blueprints
+# Blueprints
 from routes.auth_routes import auth_bp
 from routes.budget_routes import budget_bp
-from routes.home_routes import home_bp
-from routes.trends_routes import trends_bp
 from routes.expense_routes import expense_bp
 from routes.salary_routes import salary_bp
+from routes.trends_routes import trends_bp
+from routes.home_routes import home_bp  # ✅ now minimal, no circular imports
 
-# ✅ Force UTF-8 for stdout/stderr (fixes emoji crash on Windows CMD/PowerShell)
+# ✅ Force UTF-8 for stdout/stderr (fixes emoji/logging crash on Windows CMD/PowerShell)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
@@ -37,7 +35,6 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     _initialize_extensions(app)
     _configure_cors(app)
     _register_blueprints(app)
-    _register_health_check(app)
     _register_error_handlers(app)
     _configure_scheduler(app)
 
@@ -47,7 +44,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 # ---------------- HELPERS ---------------- #
 
 def _configure_logging(app: Flask) -> None:
-    """Configure logging with rotation."""
+    """Configure logging with rotation and console output."""
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
@@ -72,20 +69,20 @@ def _configure_logging(app: Flask) -> None:
 
 
 def _log_database_uri(app: Flask) -> None:
-    """Mask DB password & fix old postgres:// format."""
+    """Mask DB password & fix old postgres:// format for SQLAlchemy."""
     db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", os.getenv("DATABASE_URL", ""))
 
     if not db_uri:
         app.logger.critical("❌ No SQLALCHEMY_DATABASE_URI configured. Exiting...")
         sys.exit(1)
 
-    # Fix deprecated prefix
+    # Fix deprecated postgres:// prefix
     if db_uri.startswith("postgres://"):
         db_uri = db_uri.replace("postgres://", "postgresql://", 1)
         app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
         app.logger.warning("⚠️ Updated DB URI prefix to postgresql://")
 
-    # Mask password for logs
+    # Mask password for logging
     safe_uri = db_uri
     if "@" in db_uri and "://" in db_uri:
         try:
@@ -101,8 +98,8 @@ def _log_database_uri(app: Flask) -> None:
 
 
 def _initialize_extensions(app: Flask) -> None:
-    """Init extensions (DB, migrations, mail, etc.)."""
-    init_extensions(app)  # ✅ single call to bind all extensions
+    """Initialize extensions (DB, migrations, scheduler, etc.)."""
+    init_extensions(app)
 
     auto_create = app.config.get("AUTO_CREATE_TABLES", os.getenv("AUTO_CREATE_TABLES", "false"))
     if str(auto_create).lower() in ("1", "true", "yes"):
@@ -112,7 +109,7 @@ def _initialize_extensions(app: Flask) -> None:
 
 
 def _configure_cors(app: Flask) -> None:
-    """Enable CORS safely."""
+    """Enable CORS for frontend apps."""
     default_origins = ["http://localhost:5173"]
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
 
@@ -134,26 +131,19 @@ def _configure_cors(app: Flask) -> None:
 
 
 def _register_blueprints(app: Flask) -> None:
-    """Register blueprints."""
+    """Register all route blueprints."""
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(budget_bp, url_prefix="/budget")
-    app.register_blueprint(home_bp, url_prefix="/")
-    app.register_blueprint(trends_bp, url_prefix="/trends")
     app.register_blueprint(expense_bp, url_prefix="/expenses")
     app.register_blueprint(salary_bp, url_prefix="/salaries")
+    app.register_blueprint(trends_bp, url_prefix="/trends")
+    app.register_blueprint(home_bp, url_prefix="/")  # ✅ minimal heartbeat only
 
     app.logger.info("🧩 Blueprints registered: %s", list(app.blueprints.keys()))
 
 
-def _register_health_check(app: Flask) -> None:
-    """Health check endpoint."""
-    @app.route("/health", methods=["GET", "OPTIONS"])
-    def health_check():
-        return jsonify({"status": "ok"}), 200
-
-
 def _register_error_handlers(app: Flask) -> None:
-    """Global error handler."""
+    """Global error handlers."""
     from werkzeug.exceptions import HTTPException
 
     @app.errorhandler(Exception)
@@ -165,11 +155,11 @@ def _register_error_handlers(app: Flask) -> None:
 
 
 def _configure_scheduler(app: Flask) -> None:
-    """Configure APScheduler and register jobs."""
+    """Configure APScheduler and load scheduled jobs."""
     try:
         scheduler.init_app(app)
         scheduler.start()
-        register_jobs(scheduler)  # ✅ load jobs from utils/scheduler_jobs.py
+        register_jobs(scheduler)
         app.logger.info("⏰ Scheduler started successfully")
     except Exception as e:
         app.logger.exception("⚠️ Failed to start scheduler: %s", e)

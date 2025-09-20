@@ -4,11 +4,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 import os
-from functools import wraps
 
-from models import User, Expense
-from utils import db
-from routes.budget_routes import build_summary  # kept as explicit import
+from models.user import User
+from models.expense import Expense
+from utils.extensions import db
+from utils.decorators import token_required  # ✅ use central decorator
+from routes.budget_routes import build_summary  # explicit import, safe now
 
 # ================== Blueprint Setup ==================
 auth_bp = Blueprint("auth", __name__)
@@ -35,39 +36,6 @@ def generate_token(user_id: int, expires_in_hours: int | None = None) -> str:
 
     token = jwt.encode(payload, secret_key, algorithm="HS256")
     return token if isinstance(token, str) else token.decode("utf-8")
-
-
-def token_required(f):
-    """Decorator: protect routes with JWT authentication."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if "Authorization" in request.headers:
-            token = request.headers["Authorization"].split(" ")[-1]  # Bearer <token>
-
-        if not token:
-            return jsonify({"error": "Token is missing"}), 401
-
-        try:
-            decoded = jwt.decode(
-                token,
-                current_app.config["SECRET_KEY"],
-                algorithms=["HS256"]
-            )
-            user = User.query.get(decoded.get("user_id"))
-            if not user:
-                return jsonify({"error": "Invalid token user"}), 401
-
-        except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Token has expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"error": "Invalid token"}), 401
-        except Exception as e:
-            current_app.logger.exception("❌ Token validation failed: %s", e)
-            return jsonify({"error": "Authentication failed"}), 401
-
-        return f(user, *args, **kwargs)
-    return decorated
 
 
 def get_request_data(required_fields: list[str]):
