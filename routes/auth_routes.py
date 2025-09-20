@@ -1,13 +1,24 @@
+
 from flask import Blueprint, request, jsonify, current_app
 from models.user import User
+from models.expense import Expense
 from utils.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 import os
 from functools import wraps
+from routes.budget_routes import build_summary  # ✅ import works with only user arg
+
+# 🔹 CORS for this blueprint only
+from flask_cors import CORS
 
 auth_bp = Blueprint("auth", __name__)
+CORS(
+    auth_bp,
+    resources={r"/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}},
+    supports_credentials=True,
+)
 
 # ================== HELPER FUNCTIONS ==================
 
@@ -21,6 +32,7 @@ def generate_token(user_id: int, expires_in_hours: int = None) -> str:
 
     payload = {
         "user_id": user_id,
+        "iat": datetime.datetime.utcnow(),
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=exp_hours),
     }
 
@@ -33,7 +45,6 @@ def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
-
         if "Authorization" in request.headers:
             token = request.headers["Authorization"].split(" ")[-1]  # Bearer <token>
 
@@ -47,7 +58,6 @@ def token_required(f):
                 algorithms=["HS256"]
             )
             user = User.query.get(decoded.get("user_id"))
-
             if not user:
                 return jsonify({"error": "Invalid token user"}), 401
 
@@ -56,7 +66,7 @@ def token_required(f):
         except jwt.InvalidTokenError:
             return jsonify({"error": "Invalid token"}), 401
         except Exception as e:
-            current_app.logger.exception(f"❌ Token validation failed: {e}")
+            current_app.logger.exception("❌ Token validation failed: %s", e)
             return jsonify({"error": "Authentication failed"}), 401
 
         return f(user, *args, **kwargs)
@@ -88,7 +98,6 @@ def register():
             return jsonify({"error": "User already exists"}), 400
 
         hashed_password = generate_password_hash(password)
-
         new_user = User(
             email=email,
             password=hashed_password,
@@ -99,16 +108,17 @@ def register():
         db.session.add(new_user)
         db.session.commit()
 
-        current_app.logger.info(f"✅ User registered: {email}")
-        return jsonify({"message": "User registered successfully"}), 201
+        current_app.logger.info("✅ User registered: %s", email)
+        return jsonify({
+            "message": "User registered successfully",
+            "user_id": new_user.id,
+            "email": new_user.email
+        }), 201
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.exception(f"❌ Error in /auth/register: {e}")
-        return jsonify({
-            "error": "Server error while registering user",
-            "details": str(e)
-        }), 500
+        current_app.logger.exception("❌ Error in /auth/register: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -126,26 +136,28 @@ def login():
             return jsonify({"error": "User not found"}), 404
 
         if not check_password_hash(user.password, password):
-            current_app.logger.warning(f"❌ Invalid password attempt for {email}")
+            current_app.logger.warning("❌ Invalid password attempt for %s", email)
             return jsonify({"error": "Invalid email or password"}), 401
 
-        access_token = generate_token(user.id, expires_in_hours=1)   # short-lived
+        access_token = generate_token(user.id, expires_in_hours=1)    # short-lived
         refresh_token = generate_token(user.id, expires_in_hours=24) # long-lived
+
+        summary = build_summary(user)  # ✅ FIXED
 
         return jsonify({
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "email": user.email,
-            "salary": float(user.salary or 0),
-            "budget_limit": float(user.budget_limit or 0),
+            "profile": {
+                "email": user.email,
+                "salary": float(user.salary or 0),
+                "budget_limit": float(user.budget_limit or 0),
+            },
+            "summary": summary
         }), 200
 
     except Exception as e:
-        current_app.logger.exception(f"❌ Error in /auth/login: {e}")
-        return jsonify({
-            "error": "Server error while logging in",
-            "details": str(e)
-        }), 500
+        current_app.logger.exception("❌ Error in /auth/login: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -162,12 +174,10 @@ def refresh_token():
             algorithms=["HS256"]
         )
         user = User.query.get(decoded.get("user_id"))
-
         if not user:
             return jsonify({"error": "Invalid refresh token"}), 401
 
         new_access_token = generate_token(user.id, expires_in_hours=1)
-
         return jsonify({"access_token": new_access_token}), 200
 
     except jwt.ExpiredSignatureError:
@@ -175,42 +185,40 @@ def refresh_token():
     except jwt.InvalidTokenError:
         return jsonify({"error": "Invalid refresh token"}), 401
     except Exception as e:
-        current_app.logger.exception(f"❌ Error in /auth/refresh: {e}")
-        return jsonify({
-            "error": "Server error while refreshing token",
-            "details": str(e)
-        }), 500
+        current_app.logger.exception("❌ Error in /auth/refresh: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 # ================== USER PROFILE ==================
 
 @auth_bp.route("/user/<email>", methods=["GET"])
 @token_required
-def get_user(current_user, email):
+def get_user_profile(current_user, email):
     """Fetch user profile, salary, budget, and expenses (authorized only)."""
     try:
         if current_user.email != email.lower().strip():
             return jsonify({"error": "Unauthorized access"}), 403
 
+        expenses = Expense.query.filter_by(user_id=current_user.id).all()
+        summary = build_summary(current_user)  # ✅ FIXED
+
         return jsonify({
             "email": current_user.email,
             "salary": float(current_user.salary or 0),
             "budget_limit": float(current_user.budget_limit or 0),
+            "summary": summary,
             "expenses": [
                 {
-                    "id": e.id,
-                    "description": e.description,
-                    "amount": float(e.amount),
-                    "date": e.date.strftime("%Y-%m-%d %H:%M:%S") if e.date else None,
-                    "category": e.category or "Miscellaneous",
+                    "id": exp.id,
+                    "description": exp.description,
+                    "amount": float(exp.amount),
+                    "date": exp.date.strftime("%Y-%m-%d %H:%M:%S") if exp.date else None,
+                    "category": exp.category or "Miscellaneous",
                 }
-                for e in current_user.expenses
+                for exp in expenses
             ],
         }), 200
 
     except Exception as e:
-        current_app.logger.exception(f"❌ Error in /auth/user/<email>: {e}")
-        return jsonify({
-            "error": "Server error while fetching user",
-            "details": str(e)
-        }), 500
+        current_app.logger.exception("❌ Error in /auth/user/<email>: %s", e)
+        return jsonify({"error": str(e)}), 500

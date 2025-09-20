@@ -96,7 +96,7 @@ def _register_blueprints(app):
     """Register application blueprints."""
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(budget_bp, url_prefix="/budget")
-    app.register_blueprint(home_bp)
+    app.register_blueprint(home_bp, url_prefix="/")
     app.logger.info("✅ Blueprints registered")
 
 

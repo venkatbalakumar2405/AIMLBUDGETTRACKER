@@ -8,7 +8,6 @@ budget_bp = Blueprint("budget", __name__)
 
 
 # ================== Helpers ==================
-
 def clean_amount(value):
     """Convert input to float safely (removes ₹, commas)."""
     if value is None:
@@ -39,14 +38,20 @@ def calculate_budget_usage(user):
     )
     budget_limit = user.budget_limit or 0
     usage_percent = (total_expenses / budget_limit * 100) if budget_limit > 0 else None
+
     warning = None
-    if budget_limit > 0 and total_expenses > budget_limit:
-        warning = "⚠️ You have exceeded your budget limit!"
-    return float(total_expenses), round(usage_percent, 2) if usage_percent else None, warning
+    if budget_limit > 0:
+        if total_expenses > budget_limit:
+            warning = "⚠️ You have exceeded your budget limit!"
+        elif usage_percent >= 80:
+            warning = "⚠️ You are nearing your budget limit!"
+
+    return float(total_expenses), (
+        round(usage_percent, 2) if usage_percent is not None else None
+    ), warning
 
 
 # ================== Expenses ==================
-
 @budget_bp.route("/expenses", methods=["GET"])
 def get_expenses():
     try:
@@ -58,7 +63,11 @@ def get_expenses():
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date.desc()).all()
+        expenses = (
+            Expense.query.filter_by(user_id=user.id)
+            .order_by(Expense.date.desc())
+            .all()
+        )
 
         expense_list = [
             {
@@ -168,7 +177,6 @@ def delete_expense(id):
 
 
 # ================== Budget Settings ==================
-
 @budget_bp.route("/set-budget", methods=["PUT"])
 def set_budget():
     try:
@@ -188,7 +196,7 @@ def set_budget():
 
         return jsonify({
             "message": "Budget limit updated successfully",
-            "budget_limit": user.budget_limit,
+            "budget_limit": float(user.budget_limit),
         }), 200
     except Exception as e:
         db.session.rollback()
@@ -197,7 +205,6 @@ def set_budget():
 
 
 # ================== Trends ==================
-
 @budget_bp.route("/trends", methods=["GET"])
 def get_trends():
     try:
@@ -243,3 +250,18 @@ def get_trends():
     except Exception as e:
         print("❌ Error in /budget/trends:", str(e))
         return jsonify({"error": "Server error while fetching trends"}), 500
+
+
+# ================== Dashboard Summary ==================
+def build_summary(user=None):
+    """Return a clean budget summary dict for dashboards."""
+    if not user:
+        return {"error": "User not provided"}
+
+    total_expenses, usage_percent, warning = calculate_budget_usage(user)
+    return {
+        "total_expenses": total_expenses,
+        "budget_limit": float(user.budget_limit or 0),
+        "usage_percent": usage_percent,
+        "warning": warning,
+    }
