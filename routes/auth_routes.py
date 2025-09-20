@@ -1,4 +1,3 @@
-
 from flask import Blueprint, request, jsonify, current_app
 from models.user import User
 from models.expense import Expense
@@ -8,7 +7,7 @@ import jwt
 import datetime
 import os
 from functools import wraps
-from routes.budget_routes import build_summary  # ✅ import works with only user arg
+from routes.budget_routes import build_summary  # ✅ absolute import
 
 # 🔹 CORS for this blueprint only
 from flask_cors import CORS
@@ -142,7 +141,8 @@ def login():
         access_token = generate_token(user.id, expires_in_hours=1)    # short-lived
         refresh_token = generate_token(user.id, expires_in_hours=24) # long-lived
 
-        summary = build_summary(user)  # ✅ FIXED
+        expenses = Expense.query.filter_by(user_id=user.id).all()
+        summary = build_summary(user, expenses)
 
         return jsonify({
             "access_token": access_token,
@@ -200,7 +200,7 @@ def get_user_profile(current_user, email):
             return jsonify({"error": "Unauthorized access"}), 403
 
         expenses = Expense.query.filter_by(user_id=current_user.id).all()
-        summary = build_summary(current_user)  # ✅ FIXED
+        summary = build_summary(current_user, expenses)
 
         return jsonify({
             "email": current_user.email,
