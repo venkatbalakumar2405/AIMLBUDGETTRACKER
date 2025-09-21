@@ -1,5 +1,4 @@
 from flask import Blueprint, request, jsonify, current_app
-from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
@@ -14,10 +13,7 @@ from routes.budget_routes import build_summary   # ✅ Corrected import
 
 # ================== Blueprint Setup ================== #
 auth_bp = Blueprint("auth", __name__)
-
-# Allow only frontend origins
-ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
-CORS(auth_bp, resources={r"/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
+# ⚠️ Do NOT enable per-blueprint CORS here (handled globally in app.py)
 
 
 # ================== HELPER FUNCTIONS ================== #
@@ -83,7 +79,7 @@ def register():
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception("❌ Error in /auth/register: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -108,7 +104,7 @@ def login():
         refresh_token = generate_token(user.id, expires_in_hours=24) # long-lived
 
         expenses = Expense.query.filter_by(user_id=user.id).all()
-        summary = build_summary(user, expenses)  # ✅ Corrected
+        summary = build_summary(user, expenses)
 
         return jsonify({
             "access_token": access_token,
@@ -123,7 +119,7 @@ def login():
 
     except Exception as e:
         current_app.logger.exception("❌ Error in /auth/login: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -152,7 +148,7 @@ def refresh_token():
         return jsonify({"error": "Invalid refresh token"}), 401
     except Exception as e:
         current_app.logger.exception("❌ Error in /auth/refresh: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ================== USER PROFILE ================== #
@@ -165,7 +161,7 @@ def get_user_profile(current_user, email: str):
             return jsonify({"error": "Unauthorized access"}), 403
 
         expenses = Expense.query.filter_by(user_id=current_user.id).all()
-        summary = build_summary(current_user, expenses)  # ✅ Corrected
+        summary = build_summary(current_user, expenses)
 
         return jsonify({
             "email": current_user.email,
@@ -186,4 +182,4 @@ def get_user_profile(current_user, email: str):
 
     except Exception as e:
         current_app.logger.exception("❌ Error in /auth/user/<email>: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500

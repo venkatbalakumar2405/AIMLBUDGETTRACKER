@@ -1,13 +1,11 @@
 from flask import Blueprint, jsonify, current_app
-from flask_cors import CORS
 
 from models.expense import Expense
 from utils.decorators import token_required
 
+# ================== Blueprint Setup ================== #
 budget_bp = Blueprint("budget", __name__)
-
-ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
-CORS(budget_bp, resources={r"/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
+# ⚠️ Do NOT enable per-blueprint CORS here (handled globally in app.py)
 
 
 # ================== HELPER ================== #
@@ -45,4 +43,4 @@ def get_budget_summary(current_user, email: str):
 
     except Exception as e:
         current_app.logger.exception("❌ Error in /budget/summary/<email>: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500

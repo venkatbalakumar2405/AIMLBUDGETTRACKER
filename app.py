@@ -112,28 +112,33 @@ def _initialize_extensions(app: Flask) -> None:
 
 
 def _configure_cors(app: Flask) -> None:
-    """Enable CORS for frontend apps."""
+    """Enable strict CORS for frontend apps."""
+    # Default safe origins
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://aibudgettracker.netlify.app",  # ✅ Netlify frontend
     ]
 
+    # Load from config or env
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
     if isinstance(allowed_origins, str):
         allowed_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
-
     if not allowed_origins:
         allowed_origins = default_origins
 
+    # Final deduplicated list
+    allowed_origins = list(set(allowed_origins + default_origins))
+
     CORS(
         app,
-        resources={r"/*": {"origins": allowed_origins}},
+        origins=allowed_origins,
         supports_credentials=True,
-        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         expose_headers=["Content-Type", "Authorization"],
     )
+
     app.logger.info("🌍 CORS enabled for: %s", ", ".join(allowed_origins))
 
 

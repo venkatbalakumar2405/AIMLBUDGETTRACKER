@@ -1,31 +1,48 @@
-from flask import Blueprint, jsonify
-from models.user import User
+from flask import Blueprint, jsonify, current_app
+from collections import defaultdict
+
 from models.expense import Expense
+from utils.decorators import token_required
 
+# ================== Blueprint Setup ================== #
 trends_bp = Blueprint("trends", __name__)
+# ⚠️ No per-blueprint CORS (handled globally in app.py)
 
-@trends_bp.route("/<string:email>", methods=["GET"])
-def get_expense_trends(email: str):
-    """Return expense trends (grouped by category & monthly) for a given user email."""
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
 
-    # Fetch all expenses for the user
-    expenses = Expense.query.filter_by(user_id=user.id).all()
+# ================== ROUTES ================== #
+@trends_bp.route("/", methods=["GET"])
+@token_required
+def get_expense_trends(current_user):
+    """
+    Return expense trends for the logged-in user:
+      - category_trends: total spent per category
+      - monthly_trends: total spent per month (YYYY-MM)
+    """
+    try:
+        # Fetch all expenses for the user
+        expenses = Expense.query.filter_by(user_id=current_user.id).all()
 
-    # Aggregate by category
-    category_totals = {}
-    for exp in expenses:
-        category_totals[exp.category] = category_totals.get(exp.category, 0) + exp.amount
+        # Aggregate by category
+        category_totals = defaultdict(float)
+        for exp in expenses:
+            category = exp.category or "Miscellaneous"
+            category_totals[category] += float(exp.amount or 0)
 
-    # Aggregate by month
-    monthly_totals = {}
-    for exp in expenses:
-        month = exp.date.strftime("%Y-%m") if exp.date else "Unknown"
-        monthly_totals[month] = monthly_totals.get(month, 0) + exp.amount
+        # Aggregate by month
+        monthly_totals = defaultdict(float)
+        for exp in expenses:
+            if exp.date:
+                month = exp.date.strftime("%Y-%m")
+            else:
+                month = "Unknown"
+            monthly_totals[month] += float(exp.amount or 0)
 
-    return jsonify({
-        "category_trends": category_totals,
-        "monthly_trends": monthly_totals,
-    }), 200
+        return jsonify({
+            "email": current_user.email,
+            "category_trends": dict(category_totals),
+            "monthly_trends": dict(monthly_totals),
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("❌ Error in /trends [GET]: %s", e)
+        return jsonify({"error": "Failed to fetch expense trends"}), 500
