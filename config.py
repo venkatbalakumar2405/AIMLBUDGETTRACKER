@@ -1,95 +1,52 @@
+# config.py
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file if present
-load_dotenv()
+load_dotenv()  # ✅ Load .env for local dev
 
-
-# ---------------- HELPERS ---------------- #
-def _get_bool(name: str, default: bool = False) -> bool:
-    """Helper to parse boolean env vars safely."""
-    val = os.getenv(name)
-    if val is None:
-        return default
-    return str(val).strip().lower() in ("1", "true", "yes", "on")
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
 def _normalize_db_url(url: str) -> str:
-    """Normalize Postgres URLs for SQLAlchemy (fix Render's postgres://)."""
+    """
+    Render sometimes provides DATABASE_URL starting with 'postgres://'
+    SQLAlchemy requires 'postgresql+psycopg2://'
+    """
     if url and url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+psycopg2://", 1)
     return url
 
 
-# ---------------- BASE CONFIG ---------------- #
 class Config:
-    """Central configuration for Flask application."""
+    SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
 
-    # ================== DATABASE ================== #
-    _raw_db_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db"  # ✅ local fallback
-    )
-    SQLALCHEMY_DATABASE_URI: str = _normalize_db_url(_raw_db_url)
-    SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
+    # ✅ Choose database based on environment
+    APP_ENV = os.getenv("APP_ENV", "development")
 
-    # ================== SECURITY ================== #
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
+    if APP_ENV == "development":
+        # Local DB (fallback)
+        _raw_db_url = os.getenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db"
+        )
+    else:
+        # Production (Render must always use DATABASE_URL)
+        _raw_db_url = os.getenv("DATABASE_URL")
+        if not _raw_db_url:
+            raise ValueError("❌ DATABASE_URL is required in production")
 
-    # ================== FRONTEND / CORS ================== #
-    _frontend_urls = os.getenv(
-        "FRONTEND_URLS",
-        "http://localhost:5173,http://127.0.0.1:5173"
-    )
-    FRONTEND_URLS: list[str] = sorted(set(
-        url.strip() for url in _frontend_urls.split(",") if url.strip()
-    ) | {"https://aibudgettracker.netlify.app"})  # ✅ always include Netlify
+    SQLALCHEMY_DATABASE_URI = _normalize_db_url(_raw_db_url)
 
-    # ================== SERVER SETTINGS ================== #
-    FLASK_RUN_HOST: str = os.getenv("FLASK_RUN_HOST", "127.0.0.1")
-    FLASK_RUN_PORT: int = int(os.getenv("FLASK_RUN_PORT", 5000))
-    FLASK_DEBUG: bool = _get_bool("FLASK_DEBUG", False)
+    # Other configs
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    CORS_HEADERS = "Content-Type"
 
-    # ================== DB AUTO-CREATE ================== #
-    AUTO_CREATE_TABLES: bool = _get_bool("AUTO_CREATE_TABLES", False)
+    # Mail (optional, for notifications/reports)
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "True") == "True"
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "your-email@gmail.com")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "your-password")
 
-    # ================== LOGGING ================== #
-    LOG_DIR: Path = Path(os.getenv("LOG_DIR", "logs"))
-    LOG_FILE: str = os.getenv("LOG_FILE", "budget_tracker.log")
-    LOG_MAX_BYTES: int = int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024))  # 5 MB
-    LOG_BACKUP_COUNT: int = int(os.getenv("LOG_BACKUP_COUNT", 5))
-
-    @classmethod
-    def ensure_log_dir(cls) -> None:
-        """Ensure the log directory exists early in app startup."""
-        cls.LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def from_env(cls) -> "Config":
-        """Factory: return appropriate config class based on APP_ENV."""
-        env = os.getenv("APP_ENV", "development").lower()
-        if env == "production":
-            return ProductionConfig()
-        if env == "testing":
-            return TestingConfig()
-        return DevelopmentConfig()
-
-
-# ---------------- ENV-SPECIFIC CONFIGS ---------------- #
-class DevelopmentConfig(Config):
-    DEBUG: bool = True
-    TESTING: bool = False
-
-
-class TestingConfig(Config):
-    TESTING: bool = True
-    DEBUG: bool = False
-    SQLALCHEMY_DATABASE_URI: str = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
-
-
-class ProductionConfig(Config):
-    DEBUG: bool = False
-    TESTING: bool = False
-    FLASK_DEBUG: bool = False
+    # APScheduler
+    SCHEDULER_API_ENABLED = True
