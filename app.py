@@ -121,7 +121,7 @@ def _check_database_connection(app: Flask) -> None:
             db.session.execute(text("SELECT 1"))
         app.logger.info("✅ Database connection successful")
     except Exception as e:
-        app.logger.critical("❌ Database connection failed!", exc_info=True)
+        app.logger.critical("❌ Database connection failed: %s", e, exc_info=True)
 
 
 def _configure_cors(app: Flask) -> None:
