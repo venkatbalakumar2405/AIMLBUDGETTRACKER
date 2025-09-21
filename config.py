@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ---------------- HELPERS ---------------- #
 def _get_bool(name: str, default: bool = False) -> bool:
     """Helper to parse boolean env vars safely."""
     val = os.getenv(name)
@@ -21,7 +22,7 @@ def _normalize_db_url(url: str) -> str:
     return url
 
 
-
+# ---------------- BASE CONFIG ---------------- #
 class Config:
     """Central configuration for Flask application."""
 
@@ -44,11 +45,7 @@ class Config:
     )
     FRONTEND_URLS: list[str] = sorted(set(
         url.strip() for url in _frontend_urls.split(",") if url.strip()
-    ))
-
-    # Always include Netlify deploy as a safe fallback
-    FRONTEND_URLS.append("https://aibudgettracker.netlify.app")
-    FRONTEND_URLS = sorted(set(FRONTEND_URLS))
+    ) | {"https://aibudgettracker.netlify.app"})  # ✅ always include Netlify
 
     # ================== SERVER SETTINGS ================== #
     FLASK_RUN_HOST: str = os.getenv("FLASK_RUN_HOST", "127.0.0.1")
@@ -80,6 +77,7 @@ class Config:
         return DevelopmentConfig()
 
 
+# ---------------- ENV-SPECIFIC CONFIGS ---------------- #
 class DevelopmentConfig(Config):
     DEBUG: bool = True
     TESTING: bool = False

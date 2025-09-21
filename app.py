@@ -22,9 +22,12 @@ from routes.salary_routes import salary_bp
 from routes.trends_routes import trends_bp
 from routes.home_routes import home_bp
 
+
 # ✅ Ensure UTF-8 logs (fix Windows stdout/stderr emoji crash)
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+if sys.stdout and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+if sys.stderr and hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 # ---------------- APP FACTORY ---------------- #
@@ -36,7 +39,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     _configure_logging(app)
     _normalize_and_log_db_uri(app)
     _initialize_extensions(app)
-    _check_database_connection(app)  # ✅ DB health check
+    _check_database_connection(app)
     _configure_cors(app)
     _register_blueprints(app)
     _register_error_handlers(app)
@@ -51,7 +54,8 @@ def _configure_logging(app: Flask) -> None:
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
-    if not app.logger.handlers:  # Avoid duplicate handlers
+    # Avoid duplicate handlers
+    if not app.logger.handlers:
         logging.basicConfig(level=log_level, format=log_format)
         app.logger.setLevel(log_level)
 
@@ -96,7 +100,7 @@ def _normalize_and_log_db_uri(app: Flask) -> None:
                 user = user_pass.split(":")[0]
                 safe_uri = f"{scheme}://{user}:****@{host_part}"
         except Exception:
-            pass
+            safe_uri = db_uri  # fallback
 
     app.logger.info("🔗 Database URI (masked): %s", safe_uri)
 
@@ -105,9 +109,7 @@ def _initialize_extensions(app: Flask) -> None:
     """Initialize extensions (DB, migrations, etc.)."""
     init_extensions(app)
 
-    auto_create = app.config.get(
-        "AUTO_CREATE_TABLES", os.getenv("AUTO_CREATE_TABLES", "false")
-    )
+    auto_create = app.config.get("AUTO_CREATE_TABLES", os.getenv("AUTO_CREATE_TABLES", "false"))
     if str(auto_create).lower() in ("1", "true", "yes"):
         with app.app_context():
             db.create_all()
@@ -135,6 +137,7 @@ def _configure_cors(app: Flask) -> None:
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
     if isinstance(allowed_origins, str):
         allowed_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+
     if not allowed_origins:
         allowed_origins = default_origins
 
@@ -206,8 +209,7 @@ if __name__ == "__main__":
     debug = (
         debug_config
         if isinstance(debug_config, bool)
-        else str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower()
-        in ("1", "true", "yes")
+        else str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in ("1", "true", "yes")
     )
 
     try:
