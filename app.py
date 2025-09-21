@@ -23,7 +23,7 @@ from routes.trends_routes import trends_bp
 from routes.home_routes import home_bp
 
 
-# ✅ Ensure UTF-8 logs (fix Windows stdout/stderr emoji crash)
+# ✅ Ensure UTF-8 logs (Windows safe)
 if sys.stdout and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 if sys.stderr and hasattr(sys.stderr, "buffer"):
@@ -34,8 +34,11 @@ if sys.stderr and hasattr(sys.stderr, "buffer"):
 def create_app(config_class: type[Config] = DevelopmentConfig) -> Flask:
     """Application factory for Budget Tracker API."""
     app = Flask(__name__)
+
+    # Load config
     app.config.from_object(config_class)
 
+    # Configure and initialize components
     _configure_logging(app)
     _normalize_and_log_db_uri(app)
     _initialize_extensions(app)
@@ -50,7 +53,7 @@ def create_app(config_class: type[Config] = DevelopmentConfig) -> Flask:
 
 # ---------------- HELPERS ---------------- #
 def _configure_logging(app: Flask) -> None:
-    """Configure logging with rotation and console output."""
+    """Configure logging with rotation + console output."""
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
