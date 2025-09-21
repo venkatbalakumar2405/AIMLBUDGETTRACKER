@@ -2184,3 +2184,28 @@ AttributeError: 'BackgroundScheduler' object has no attribute 'init_app'
 2025-09-21 09:15:14,437 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'expense', 'salary', 'trends', 'home']
 2025-09-21 09:15:14,502 [INFO] app: ⏰ Scheduler started successfully
 2025-09-21 09:15:14,503 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-21 09:19:41,173 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-21 09:19:41,176 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-21 09:19:41,257 [INFO] app: ✅ SQLAlchemy initialized
+2025-09-21 09:19:41,265 [INFO] app: ✅ Flask-Migrate initialized
+2025-09-21 09:19:41,266 [INFO] app: ✅ Flask-Mail initialized
+2025-09-21 09:19:41,266 [INFO] app: 🌍 CORS enabled for: http://localhost:5173, http://127.0.0.1:5173
+2025-09-21 09:19:41,284 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'expense', 'salary', 'trends', 'home']
+2025-09-21 09:19:41,429 [INFO] app: ⏰ Scheduler started successfully
+2025-09-21 09:19:41,563 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-21 09:19:51,437 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:20:01,671 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:20:11,457 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:20:21,448 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:20:31,367 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:20:41,360 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:20:51,365 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:21:01,341 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:21:11,347 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:21:21,352 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:21:31,354 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:21:41,346 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:21:51,342 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:22:01,344 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:22:11,356 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 09:22:21,361 [INFO] app: ✅ Scheduler sample job executed.
