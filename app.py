@@ -116,7 +116,7 @@ def _configure_cors(app: Flask) -> None:
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://aibudgettracker.netlify.app",  # ✅ Allow Netlify frontend
+        "https://aibudgettracker.netlify.app",  # ✅ Netlify frontend
     ]
 
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
@@ -144,7 +144,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(expense_bp, url_prefix="/expenses")
     app.register_blueprint(salary_bp, url_prefix="/salaries")
     app.register_blueprint(trends_bp, url_prefix="/trends")
-    app.register_blueprint(home_bp, url_prefix="/")  # ✅ heartbeat only
+    app.register_blueprint(home_bp, url_prefix="/")  # ✅ heartbeat route
 
     app.logger.info("🧩 Blueprints registered: %s", list(app.blueprints.keys()))
 
@@ -165,7 +165,7 @@ def _configure_scheduler(app: Flask) -> None:
     """Configure APScheduler and load jobs."""
     try:
         scheduler = BackgroundScheduler()
-        register_jobs(scheduler, app)  # ✅ FIXED: pass app too
+        register_jobs(scheduler, app)  # ✅ pass app into job registration
         scheduler.start()
         app.logger.info("⏰ Scheduler started successfully")
     except Exception as e:
