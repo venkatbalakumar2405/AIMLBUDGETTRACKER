@@ -3,10 +3,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-# Load local .env (ignored in production)
+# Load local .env file (ignored in production)
 load_dotenv()
-
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -29,34 +27,6 @@ def _normalize_db_url(url: str) -> str:
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
-
-    # ✅ Choose database based on environment
-    APP_ENV = os.getenv("APP_ENV", "development")
-
-    if APP_ENV == "development":
-        # Local DB (fallback if DATABASE_URL not set)
-        _raw_db_url = os.getenv(
-            "DATABASE_URL",
-            "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db",
-        )
-    else:
-        # Production (Render must always provide DATABASE_URL)
-        _raw_db_url = os.getenv("DATABASE_URL")
-        if not _raw_db_url:
-            raise ValueError("❌ DATABASE_URL is required in production")
-
-    SQLALCHEMY_DATABASE_URI = _normalize_db_url(_raw_db_url)
-
-    # Mask password in logs but still print useful debug info
-    if SQLALCHEMY_DATABASE_URI:
-        safe_uri = SQLALCHEMY_DATABASE_URI.replace(
-            SQLALCHEMY_DATABASE_URI.split(":")[2].split("@")[0], "*****"
-        )
-        logger.info(f"🔗 Using database: {safe_uri}")
-    else:
-        logger.error("❌ No DATABASE_URL provided. Cannot connect to database.")
-
-    # Other configs
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     CORS_HEADERS = "Content-Type"
 
@@ -69,3 +39,32 @@ class Config:
 
     # APScheduler
     SCHEDULER_API_ENABLED = True
+
+
+class DevelopmentConfig(Config):
+    DEBUG = True
+    _raw_db_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db",
+    )
+    SQLALCHEMY_DATABASE_URI = _normalize_db_url(_raw_db_url)
+    logger.info(f"🛠 Development DB: {SQLALCHEMY_DATABASE_URI}")
+
+
+class TestingConfig(Config):
+    TESTING = True
+    _raw_db_url = os.getenv(
+        "DATABASE_TEST_URL",
+        "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_test_db",
+    )
+    SQLALCHEMY_DATABASE_URI = _normalize_db_url(_raw_db_url)
+    logger.info(f"🧪 Testing DB: {SQLALCHEMY_DATABASE_URI}")
+
+
+class ProductionConfig(Config):
+    DEBUG = False
+    _raw_db_url = os.getenv("DATABASE_URL")
+    if not _raw_db_url:
+        raise ValueError("❌ DATABASE_URL is required in production")
+    SQLALCHEMY_DATABASE_URI = _normalize_db_url(_raw_db_url)
+    logger.info(f"🚀 Production DB: {SQLALCHEMY_DATABASE_URI}")

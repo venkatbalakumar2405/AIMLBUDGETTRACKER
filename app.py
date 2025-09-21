@@ -31,7 +31,7 @@ if sys.stderr and hasattr(sys.stderr, "buffer"):
 
 
 # ---------------- APP FACTORY ---------------- #
-def create_app(config_class: type[Config] = Config) -> Flask:
+def create_app(config_class: type[Config] = DevelopmentConfig) -> Flask:
     """Application factory for Budget Tracker API."""
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -54,8 +54,7 @@ def _configure_logging(app: Flask) -> None:
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
-    # Avoid duplicate handlers
-    if not app.logger.handlers:
+    if not app.logger.handlers:  # Prevent duplicate handlers
         logging.basicConfig(level=log_level, format=log_format)
         app.logger.setLevel(log_level)
 
@@ -84,15 +83,13 @@ def _normalize_and_log_db_uri(app: Flask) -> None:
         app.logger.critical("❌ No SQLALCHEMY_DATABASE_URI configured. Exiting...")
         sys.exit(1)
 
-    # Fix deprecated postgres:// prefix
-    if db_uri.startswith("postgres://"):
+    if db_uri.startswith("postgres://"):  # Fix deprecated prefix
         db_uri = db_uri.replace("postgres://", "postgresql+psycopg2://", 1)
         app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
         app.logger.warning("⚠️ Updated DB URI prefix to postgresql+psycopg2://")
 
-    # Mask password for logs
     safe_uri = db_uri
-    if "@" in db_uri and "://" in db_uri:
+    if "@" in db_uri and "://" in db_uri:  # Mask password in logs
         try:
             scheme, rest = db_uri.split("://", 1)
             if ":" in rest.split("@", 1)[0]:
@@ -100,7 +97,7 @@ def _normalize_and_log_db_uri(app: Flask) -> None:
                 user = user_pass.split(":")[0]
                 safe_uri = f"{scheme}://{user}:****@{host_part}"
         except Exception:
-            safe_uri = db_uri  # fallback
+            safe_uri = db_uri
 
     app.logger.info("🔗 Database URI (masked): %s", safe_uri)
 
@@ -131,7 +128,7 @@ def _configure_cors(app: Flask) -> None:
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://aibudgettracker.netlify.app",  # ✅ Netlify frontend
+        "https://aibudgettracker.netlify.app",
     ]
 
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
@@ -162,7 +159,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(expense_bp, url_prefix="/expenses")
     app.register_blueprint(salary_bp, url_prefix="/salaries")
     app.register_blueprint(trends_bp, url_prefix="/trends")
-    app.register_blueprint(home_bp, url_prefix="/")  # ✅ heartbeat route
+    app.register_blueprint(home_bp, url_prefix="/")
 
     app.logger.info("🧩 Blueprints registered: %s", list(app.blueprints.keys()))
 
