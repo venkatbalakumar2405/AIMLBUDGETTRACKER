@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 # ================== Project Imports ================== #
 from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
-from utils.extensions import db, init_extensions  # ✅ removed unused migrate, mail
+from utils.extensions import db, init_extensions
 from utils.scheduler_jobs import register_jobs
 
 # Blueprints
@@ -113,7 +113,11 @@ def _initialize_extensions(app: Flask) -> None:
 
 def _configure_cors(app: Flask) -> None:
     """Enable CORS for frontend apps."""
-    default_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    default_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://aibudgettracker.netlify.app",  # ✅ Allow Netlify frontend
+    ]
 
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
     if isinstance(allowed_origins, str):
@@ -161,7 +165,7 @@ def _configure_scheduler(app: Flask) -> None:
     """Configure APScheduler and load jobs."""
     try:
         scheduler = BackgroundScheduler()
-        register_jobs(scheduler, app)  # ✅ pass app
+        register_jobs(scheduler)  # ✅ corrected (no app param)
         scheduler.start()
         app.logger.info("⏰ Scheduler started successfully")
     except Exception as e:

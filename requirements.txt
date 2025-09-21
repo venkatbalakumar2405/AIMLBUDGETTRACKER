@@ -54,7 +54,7 @@ pyparsing==3.2.4
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 pytz==2025.2
-# Removed pywin32 (Windows-only, breaks on Linux/Render)
+pywin32==311; sys_platform == "win32"   # ✅ only installs on Windows
 pyzmq==27.0.1
 reportlab==4.4.3
 six==1.17.0
