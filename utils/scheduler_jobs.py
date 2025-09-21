@@ -1,59 +1,70 @@
 from flask_mail import Message
 from datetime import datetime
-from flask import current_app
 from typing import Optional
 
-from utils.extensions import mail   # direct import (no circular issue here)
-from models.user import User        # direct import avoids undefined name
-from utils.report_utils import generate_excel
+from models.user import User
+from utils.report_utils import generate_report  # ✅ updated import
 
 
-def monthly_report_job(single_user: Optional[User] = None) -> None:
+def monthly_report_job(app, single_user: Optional[User] = None) -> None:
     """
-    Send monthly Excel expense reports via email.
+    Send monthly expense reports via email (CSV by default).
     """
-    current_app.logger.info("📅 Running monthly report job...")
+    with app.app_context():
+        app.logger.info("📅 Running monthly report job...")
 
-    users = [single_user] if single_user else User.query.all()
-    for user in users:
-        try:
-            excel_file = generate_excel(user.expenses)
+        users = [single_user] if single_user else User.query.all()
+        for user in users:
+            try:
+                # ✅ Generate CSV report (default)
+                response = generate_report(user.id, format="csv")
+                if not response:
+                    app.logger.warning("⚠️ No expenses for %s", user.email)
+                    continue
 
-            msg = Message(
-                subject=f"Monthly Report - {datetime.now().strftime('%B %Y')}",
-                sender="noreply@budgettracker.com",
-                recipients=[user.email],
-            )
-            msg.body = f"Hello {user.email},\n\nPlease find attached your monthly expense report."
-            msg.attach(
-                "report.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                excel_file.getvalue(),
-            )
+                # Read report bytes from Flask response
+                report_data = (
+                    response.response[0] if isinstance(response.response, list) else response.response
+                )
 
-            with current_app.app_context():
+                from utils.extensions import mail  # lazy import (avoids circulars)
+
+                msg = Message(
+                    subject=f"Monthly Report - {datetime.now().strftime('%B %Y')}",
+                    sender="noreply@budgettracker.com",
+                    recipients=[user.email],
+                )
+                msg.body = f"Hello {user.email},\n\nPlease find attached your monthly expense report."
+                msg.attach(
+                    "expense_report.csv",
+                    "text/csv",
+                    report_data,
+                )
+
                 mail.send(msg)
+                app.logger.info("✅ Report sent to %s", user.email)
 
-            current_app.logger.info("✅ Report sent to %s", user.email)
-        except Exception as e:
-            current_app.logger.error("❌ Failed to send report to %s: %s", user.email, e)
+            except Exception as e:
+                app.logger.error("❌ Failed to send report to %s: %s", user.email, e)
 
-    current_app.logger.info("📅 Monthly report job completed.")
+        app.logger.info("📅 Monthly report job completed.")
 
 
-def sample_job() -> None:
+def sample_job(app) -> None:
     """Simple test job for debugging."""
-    current_app.logger.info("✅ Scheduler sample job executed.")
+    with app.app_context():
+        app.logger.info("✅ Scheduler sample job executed.")
 
 
-def register_jobs(scheduler) -> None:
-    """Register scheduled jobs."""
+def register_jobs(scheduler, app) -> None:
+    """Register scheduled jobs with Flask app context."""
     scheduler.add_job(
         id="sample_job",
         func=sample_job,
         trigger="interval",
         seconds=10,
         replace_existing=True,
+        args=[app],  # ✅ pass app
     )
 
     scheduler.add_job(
@@ -64,4 +75,5 @@ def register_jobs(scheduler) -> None:
         hour=8,
         minute=0,
         replace_existing=True,
+        args=[app],  # ✅ pass app
     )

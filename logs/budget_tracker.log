@@ -2153,3 +2153,34 @@ sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to serve
 2025-09-20 16:57:51,054 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'home', 'trends']
 2025-09-20 16:57:51,077 [INFO] app: ⏰ Scheduler started successfully
 2025-09-20 16:57:51,078 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-20 21:47:18,451 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-20 21:47:18,455 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-20 21:47:20,505 [INFO] app: 🌍 CORS enabled for: http://localhost:5173, http://127.0.0.1:5173
+2025-09-20 21:47:20,544 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'expense_bp', 'salary', 'trends', 'home']
+2025-09-20 21:47:20,545 [ERROR] app: ⚠️ Failed to start scheduler: 'BackgroundScheduler' object has no attribute 'init_app'
+Traceback (most recent call last):
+  File "D:\AI Budget_Tracker_Backend\BudgetTracker_Backend\app.py", line 160, in _configure_scheduler
+    scheduler.init_app(app)
+    ^^^^^^^^^^^^^^^^^^
+AttributeError: 'BackgroundScheduler' object has no attribute 'init_app'
+2025-09-20 21:47:20,568 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-21 09:06:27,398 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-21 09:06:27,400 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-21 09:06:27,568 [INFO] app: 🌍 CORS enabled for: http://localhost:5173, http://127.0.0.1:5173
+2025-09-21 09:06:27,578 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'expense', 'salary', 'trends', 'home']
+2025-09-21 09:06:27,581 [ERROR] app: ⚠️ Failed to start scheduler: 'BackgroundScheduler' object has no attribute 'init_app'
+Traceback (most recent call last):
+  File "D:\AI Budget_Tracker_Backend\BudgetTracker_Backend\app.py", line 162, in _configure_scheduler
+    scheduler.init_app(app)
+    ^^^^^^^^^^^^^^^^^^
+AttributeError: 'BackgroundScheduler' object has no attribute 'init_app'
+2025-09-21 09:06:27,586 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)
+2025-09-21 09:15:14,352 [INFO] app: 📝 Logging configured (level=DEBUG)
+2025-09-21 09:15:14,353 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-21 09:15:14,419 [INFO] app: ✅ SQLAlchemy initialized
+2025-09-21 09:15:14,423 [INFO] app: ✅ Flask-Migrate initialized
+2025-09-21 09:15:14,424 [INFO] app: ✅ Flask-Mail initialized
+2025-09-21 09:15:14,424 [INFO] app: 🌍 CORS enabled for: http://localhost:5173, http://127.0.0.1:5173
+2025-09-21 09:15:14,437 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'expense', 'salary', 'trends', 'home']
+2025-09-21 09:15:14,502 [INFO] app: ⏰ Scheduler started successfully
+2025-09-21 09:15:14,503 [INFO] app: 🚀 Starting Budget Tracker API at http://127.0.0.1:5000 (debug=False)

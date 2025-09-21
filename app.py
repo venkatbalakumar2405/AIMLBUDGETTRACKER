@@ -6,10 +6,11 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask, jsonify
 from flask_cors import CORS
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # ================== Project Imports ================== #
 from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
-from utils.extensions import db, scheduler, init_extensions
+from utils.extensions import db, init_extensions  # ✅ removed unused migrate, mail
 from utils.scheduler_jobs import register_jobs
 
 # Blueprints
@@ -18,15 +19,16 @@ from routes.budget_routes import budget_bp
 from routes.expense_routes import expense_bp
 from routes.salary_routes import salary_bp
 from routes.trends_routes import trends_bp
-from routes.home_routes import home_bp  # ✅ now minimal, no circular imports
+from routes.home_routes import home_bp
 
-# ✅ Force UTF-8 for stdout/stderr (fixes emoji/logging crash on Windows CMD/PowerShell)
+# ✅ Ensure UTF-8 logs (Windows fix for emoji / stdout crashes)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
+# ---------------- APP FACTORY ---------------- #
 def create_app(config_class: type[Config] = Config) -> Flask:
-    """Application factory for the Budget Tracker API."""
+    """Application factory for Budget Tracker API."""
     app = Flask(__name__)
     app.config.from_object(config_class)
 
@@ -42,7 +44,6 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 
 
 # ---------------- HELPERS ---------------- #
-
 def _configure_logging(app: Flask) -> None:
     """Configure logging with rotation and console output."""
     log_level = logging.DEBUG if app.debug else logging.INFO
@@ -82,7 +83,7 @@ def _log_database_uri(app: Flask) -> None:
         app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
         app.logger.warning("⚠️ Updated DB URI prefix to postgresql://")
 
-    # Mask password for logging
+    # Mask password for logs
     safe_uri = db_uri
     if "@" in db_uri and "://" in db_uri:
         try:
@@ -98,10 +99,12 @@ def _log_database_uri(app: Flask) -> None:
 
 
 def _initialize_extensions(app: Flask) -> None:
-    """Initialize extensions (DB, migrations, scheduler, etc.)."""
+    """Initialize extensions (DB, migrations, mail)."""
     init_extensions(app)
 
-    auto_create = app.config.get("AUTO_CREATE_TABLES", os.getenv("AUTO_CREATE_TABLES", "false"))
+    auto_create = app.config.get(
+        "AUTO_CREATE_TABLES", os.getenv("AUTO_CREATE_TABLES", "false")
+    )
     if str(auto_create).lower() in ("1", "true", "yes"):
         with app.app_context():
             db.create_all()
@@ -110,11 +113,12 @@ def _initialize_extensions(app: Flask) -> None:
 
 def _configure_cors(app: Flask) -> None:
     """Enable CORS for frontend apps."""
-    default_origins = ["http://localhost:5173"]
-    allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
+    default_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
     if isinstance(allowed_origins, str):
         allowed_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+
     if not allowed_origins:
         allowed_origins = default_origins
 
@@ -126,7 +130,6 @@ def _configure_cors(app: Flask) -> None:
         allow_headers=["Content-Type", "Authorization"],
         expose_headers=["Content-Type", "Authorization"],
     )
-
     app.logger.info("🌍 CORS enabled for: %s", ", ".join(allowed_origins))
 
 
@@ -137,7 +140,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(expense_bp, url_prefix="/expenses")
     app.register_blueprint(salary_bp, url_prefix="/salaries")
     app.register_blueprint(trends_bp, url_prefix="/trends")
-    app.register_blueprint(home_bp, url_prefix="/")  # ✅ minimal heartbeat only
+    app.register_blueprint(home_bp, url_prefix="/")  # ✅ heartbeat only
 
     app.logger.info("🧩 Blueprints registered: %s", list(app.blueprints.keys()))
 
@@ -155,20 +158,20 @@ def _register_error_handlers(app: Flask) -> None:
 
 
 def _configure_scheduler(app: Flask) -> None:
-    """Configure APScheduler and load scheduled jobs."""
+    """Configure APScheduler and load jobs."""
     try:
-        scheduler.init_app(app)
+        scheduler = BackgroundScheduler()
+        register_jobs(scheduler, app)  # ✅ pass app
         scheduler.start()
-        register_jobs(scheduler)
         app.logger.info("⏰ Scheduler started successfully")
     except Exception as e:
         app.logger.exception("⚠️ Failed to start scheduler: %s", e)
 
 
 # ---------------- ENTRY POINT ---------------- #
-
 if __name__ == "__main__":
     env = os.getenv("APP_ENV", "development").lower()
+
     if env == "production":
         config_class = ProductionConfig
     elif env == "testing":
@@ -185,7 +188,11 @@ if __name__ == "__main__":
     if isinstance(debug_config, bool):
         debug = debug_config
     else:
-        debug = str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in ("1", "true", "yes")
+        debug = str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
     try:
         app.logger.info(

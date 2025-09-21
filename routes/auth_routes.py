@@ -8,10 +8,11 @@ import os
 from models.user import User
 from models.expense import Expense
 from utils.extensions import db
-from utils.decorators import token_required  # ✅ use central decorator
-from routes.budget_routes import build_summary  # explicit import, safe now
+from utils.decorators import token_required
+from routes.budget_routes import build_summary   # ✅ Corrected import
 
-# ================== Blueprint Setup ==================
+
+# ================== Blueprint Setup ================== #
 auth_bp = Blueprint("auth", __name__)
 
 # Allow only frontend origins
@@ -19,7 +20,7 @@ ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 CORS(auth_bp, resources={r"/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
 
 
-# ================== HELPER FUNCTIONS ==================
+# ================== HELPER FUNCTIONS ================== #
 def generate_token(user_id: int, expires_in_hours: int | None = None) -> str:
     """Generate a JWT token for a user with expiration."""
     exp_hours = expires_in_hours or int(os.getenv("JWT_EXP_HOURS", 12))
@@ -47,7 +48,7 @@ def get_request_data(required_fields: list[str]):
     return data, None, None
 
 
-# ================== AUTH ROUTES ==================
+# ================== AUTH ROUTES ================== #
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Register a new user with email, password, salary, and budget limit."""
@@ -107,7 +108,7 @@ def login():
         refresh_token = generate_token(user.id, expires_in_hours=24) # long-lived
 
         expenses = Expense.query.filter_by(user_id=user.id).all()
-        summary = build_summary(user, expenses)
+        summary = build_summary(user, expenses)  # ✅ Corrected
 
         return jsonify({
             "access_token": access_token,
@@ -154,7 +155,7 @@ def refresh_token():
         return jsonify({"error": str(e)}), 500
 
 
-# ================== USER PROFILE ==================
+# ================== USER PROFILE ================== #
 @auth_bp.route("/user/<email>", methods=["GET"])
 @token_required
 def get_user_profile(current_user, email: str):
@@ -164,7 +165,7 @@ def get_user_profile(current_user, email: str):
             return jsonify({"error": "Unauthorized access"}), 403
 
         expenses = Expense.query.filter_by(user_id=current_user.id).all()
-        summary = build_summary(current_user, expenses)
+        summary = build_summary(current_user, expenses)  # ✅ Corrected
 
         return jsonify({
             "email": current_user.email,
