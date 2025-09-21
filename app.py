@@ -165,7 +165,7 @@ def _configure_scheduler(app: Flask) -> None:
     """Configure APScheduler and load jobs."""
     try:
         scheduler = BackgroundScheduler()
-        register_jobs(scheduler)  # ✅ corrected (no app param)
+        register_jobs(scheduler, app)  # ✅ FIXED: pass app too
         scheduler.start()
         app.logger.info("⏰ Scheduler started successfully")
     except Exception as e:
