@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: aimlbudgettracker-backend
+    env: python
+    plan: free   # You can change to 'starter' or higher if needed
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT"
+    autoDeploy: true
+
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false   # set manually in Render dashboard
+      - key: SECRET_KEY
+        sync: false   # set manually in Render dashboard
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_SERVER
+        sync: false
+      - key: MAIL_PORT
+        sync: false
+      - key: MAIL_USE_TLS
+        sync: false
