@@ -34,9 +34,9 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     app.config.from_object(config_class)
 
     _configure_logging(app)
-    _log_database_uri(app)
+    _normalize_and_log_db_uri(app)
     _initialize_extensions(app)
-    _check_database_connection(app)   # ✅ DB health check
+    _check_database_connection(app)  # ✅ DB health check
     _configure_cors(app)
     _register_blueprints(app)
     _register_error_handlers(app)
@@ -51,8 +51,7 @@ def _configure_logging(app: Flask) -> None:
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
-    # Avoid duplicate handlers (Flask reloader adds twice)
-    if not app.logger.handlers:
+    if not app.logger.handlers:  # Avoid duplicate handlers
         logging.basicConfig(level=log_level, format=log_format)
         app.logger.setLevel(log_level)
 
@@ -73,8 +72,8 @@ def _configure_logging(app: Flask) -> None:
     app.logger.info("📝 Logging configured (level=%s)", logging.getLevelName(log_level))
 
 
-def _log_database_uri(app: Flask) -> None:
-    """Mask DB password & normalize postgres:// format."""
+def _normalize_and_log_db_uri(app: Flask) -> None:
+    """Normalize DB URI (fix postgres://) and mask password in logs."""
     db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", os.getenv("DATABASE_URL", ""))
 
     if not db_uri:
@@ -87,7 +86,7 @@ def _log_database_uri(app: Flask) -> None:
         app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
         app.logger.warning("⚠️ Updated DB URI prefix to postgresql+psycopg2://")
 
-    # Mask password in logs
+    # Mask password for logs
     safe_uri = db_uri
     if "@" in db_uri and "://" in db_uri:
         try:
@@ -99,7 +98,7 @@ def _log_database_uri(app: Flask) -> None:
         except Exception:
             pass
 
-    app.logger.info("🔗 Database URI: %s", safe_uri)
+    app.logger.info("🔗 Database URI (masked): %s", safe_uri)
 
 
 def _initialize_extensions(app: Flask) -> None:
@@ -122,7 +121,7 @@ def _check_database_connection(app: Flask) -> None:
             db.session.execute(text("SELECT 1"))
         app.logger.info("✅ Database connection successful")
     except Exception as e:
-        app.logger.critical("❌ Database connection failed: %s", e, exc_info=True)
+        app.logger.critical("❌ Database connection failed!", exc_info=True)
 
 
 def _configure_cors(app: Flask) -> None:
@@ -181,7 +180,7 @@ def _configure_scheduler(app: Flask) -> None:
     """Configure APScheduler and load jobs."""
     try:
         scheduler = BackgroundScheduler()
-        register_jobs(scheduler, app)  # ✅ pass app into job registration
+        register_jobs(scheduler, app)
         scheduler.start()
         app.logger.info("⏰ Scheduler started successfully")
     except Exception as e:

@@ -15,10 +15,11 @@ def _get_bool(name: str, default: bool = False) -> bool:
 
 
 def _normalize_db_url(url: str) -> str:
-    """Normalize Postgres URLs (Render gives postgres://, SQLAlchemy needs postgresql+psycopg2://)."""
+    """Normalize Postgres URLs for SQLAlchemy (fix Render's postgres://)."""
     if url and url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+psycopg2://", 1)
     return url
+
 
 
 class Config:
