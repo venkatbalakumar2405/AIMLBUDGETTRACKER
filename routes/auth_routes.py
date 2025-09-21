@@ -85,8 +85,9 @@ def register():
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.exception("❌ Error in /auth/register: %s", e)
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -124,8 +125,9 @@ def login():
         }), 200
 
     except Exception as e:
-        current_app.logger.exception("❌ Error in /auth/login: %s", e)
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -156,8 +158,9 @@ def refresh_token():
     except jwt.InvalidTokenError:
         return jsonify({"status": "error", "message": "Invalid refresh token"}), 401
     except Exception as e:
-        current_app.logger.exception("❌ Error in /auth/refresh: %s", e)
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ================== USER PROFILE ================== #
@@ -191,5 +194,6 @@ def get_user_profile(current_user, email: str):
         }), 200
 
     except Exception as e:
-        current_app.logger.exception("❌ Error in /auth/user/<email>: %s", e)
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
