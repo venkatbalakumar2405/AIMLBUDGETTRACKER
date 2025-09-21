@@ -17,7 +17,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     DATABASE_URL = os.getenv("DATABASE_URL")
 
-    # Normalize DB URI (postgres:// → postgresql+psycopg2://)
+    # ✅ Normalize DB URI (postgres:// → postgresql+psycopg2://)
     if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace(
             "postgres://", "postgresql+psycopg2://", 1
@@ -25,8 +25,16 @@ class Config:
 
     # ✅ Ensure Neon works with psycopg2 (fix channel_binding issue)
     if DATABASE_URL:
+        # Remove any "channel_binding=require"
+        if "channel_binding=require" in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace(
+                "channel_binding=require", "gssencmode=disable"
+            )
+
+        # Force sslmode=require if missing
         if "sslmode=" not in DATABASE_URL:
             DATABASE_URL += "?sslmode=require&gssencmode=disable"
+        # Ensure gssencmode=disable is present
         elif "gssencmode=" not in DATABASE_URL:
             DATABASE_URL += "&gssencmode=disable"
 
@@ -56,22 +64,4 @@ class DevelopmentConfig(Config):
     SQLALCHEMY_DATABASE_URI = Config.DATABASE_URL or "sqlite:///budget_dev.db"
 
 
-class TestingConfig(Config):
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    WTF_CSRF_ENABLED = False
-
-
-class ProductionConfig(Config):
-    DEBUG = False
-    SQLALCHEMY_DATABASE_URI = Config.DATABASE_URL
-    if not SQLALCHEMY_DATABASE_URI:
-        raise RuntimeError("❌ DATABASE_URL must be set for production.")
-
-
-# Default export for Flask CLI
-config_by_name = dict(
-    development=DevelopmentConfig,
-    testing=TestingConfig,
-    production=ProductionConfig,
-)
+class TestingC
