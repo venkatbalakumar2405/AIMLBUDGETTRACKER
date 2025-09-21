@@ -4,10 +4,10 @@ from logging.config import fileConfig
 from flask import current_app
 from alembic import context
 
-# Alembic Config object, provides access to values from alembic.ini
+# Alembic Config object (from alembic.ini)
 config = context.config
 
-# Configure logging from alembic.ini
+# Configure logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 logger = logging.getLogger("alembic.env")
@@ -24,7 +24,7 @@ def get_engine():
 
 
 def get_engine_url():
-    """Get engine URL string for Alembic."""
+    """Get database URL for Alembic."""
     engine = get_engine()
     try:
         return engine.url.render_as_string(hide_password=False).replace("%", "%%")
@@ -32,7 +32,7 @@ def get_engine_url():
         return str(engine.url).replace("%", "%%")
 
 
-# ✅ Set Alembic sqlalchemy.url dynamically from Flask config
+# ✅ Dynamically set sqlalchemy.url from Flask config
 config.set_main_option("sqlalchemy.url", get_engine_url())
 
 # Target metadata for autogenerate support
@@ -40,14 +40,14 @@ db = current_app.extensions["migrate"].db
 
 
 def get_metadata():
-    """Return SQLAlchemy metadata for autogenerate support."""
-    if hasattr(db, "metadatas"):  # Flask-SQLAlchemy >= 3.x
+    """Return SQLAlchemy metadata for migrations."""
+    if hasattr(db, "metadatas"):  # Flask-SQLAlchemy >= 3.0
         return db.metadatas.get(None)
     return db.metadata
 
 
 def run_migrations_offline():
-    """Run migrations in 'offline' mode (no live DB connection)."""
+    """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -61,17 +61,17 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
-    """Run migrations in 'online' mode (with live DB connection)."""
+    """Run migrations in 'online' mode."""
 
     def process_revision_directives(context, revision, directives):
-        """Prevent empty auto-generated migrations."""
+        """Skip empty autogenerate migrations."""
         if getattr(config.cmd_opts, "autogenerate", False):
             script = directives[0]
             if script.upgrade_ops.is_empty():
                 directives[:] = []
                 logger.info("✅ No schema changes detected.")
 
-    conf_args = current_app.extensions["migrate"].configure_args or {}
+    conf_args = getattr(current_app.extensions["migrate"], "configure_args", {}) or {}
     conf_args.setdefault("process_revision_directives", process_revision_directives)
 
     connectable = get_engine()
@@ -88,8 +88,8 @@ def run_migrations_online():
             context.run_migrations()
 
 
-# ✅ Run depending on mode
+# ✅ Choose run mode
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online
+    run_migrations_online()
