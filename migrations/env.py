@@ -1,95 +1,85 @@
-import logging
-from logging.config import fileConfig
+import os
+from dotenv import load_dotenv
 
-from flask import current_app
-from alembic import context
-
-# Alembic Config object (from alembic.ini)
-config = context.config
-
-# Configure logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-logger = logging.getLogger("alembic.env")
+# Load environment variables from .env if present
+load_dotenv()
 
 
-def get_engine():
-    """Return SQLAlchemy engine from Flask-Migrate/SQLAlchemy extension."""
-    try:
-        # Flask-SQLAlchemy < 3.0
-        return current_app.extensions["migrate"].db.get_engine()
-    except (TypeError, AttributeError, KeyError):
-        # Flask-SQLAlchemy >= 3.0
-        return current_app.extensions["migrate"].db.engine
+class Config:
+    """Base configuration shared across environments."""
 
+    # Flask
+    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
+    DEBUG = False
+    TESTING = False
 
-def get_engine_url():
-    """Get database URL for Alembic from the engine."""
-    engine = get_engine()
-    try:
-        return engine.url.render_as_string(hide_password=False).replace("%", "%%")
-    except AttributeError:
-        return str(engine.url).replace("%", "%%")
+    # Database
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
-
-# ✅ Dynamically set sqlalchemy.url from Flask config
-config.set_main_option("sqlalchemy.url", get_engine_url())
-
-# Target metadata for autogenerate support
-db = current_app.extensions["migrate"].db
-
-
-def get_metadata():
-    """Return SQLAlchemy metadata for migrations."""
-    if hasattr(db, "metadatas"):  # Flask-SQLAlchemy >= 3.0
-        return db.metadatas.get(None)
-    return db.metadata
-
-
-def run_migrations_offline():
-    """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(
-        url=url,
-        target_metadata=get_metadata(),
-        literal_binds=True,
-        compare_type=True,  # ✅ detect column type changes
-    )
-
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-def run_migrations_online():
-    """Run migrations in 'online' mode."""
-
-    def process_revision_directives(context, revision, directives):
-        """Skip empty autogenerate migrations."""
-        if getattr(config.cmd_opts, "autogenerate", False):
-            script = directives[0]
-            if script.upgrade_ops.is_empty():
-                directives[:] = []
-                logger.info("✅ No schema changes detected.")
-
-    conf_args = getattr(current_app.extensions["migrate"], "configure_args", {}) or {}
-    conf_args.setdefault("process_revision_directives", process_revision_directives)
-
-    connectable = get_engine()
-
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            compare_type=True,  # ✅ detect column type changes
-            **conf_args,
+    # ✅ Normalize DB URI (postgres:// → postgresql+psycopg2://)
+    if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace(
+            "postgres://", "postgresql+psycopg2://", 1
         )
 
-        with context.begin_transaction():
-            context.run_migrations()
+    # ✅ Ensure Neon works with psycopg2 (fix channel_binding issue)
+    if DATABASE_URL:
+        # Remove any "channel_binding=require"
+        if "channel_binding=require" in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace(
+                "channel_binding=require", "gssencmode=disable"
+            )
+
+        # Force sslmode=require if missing
+        if "sslmode=" not in DATABASE_URL:
+            DATABASE_URL += "?sslmode=require&gssencmode=disable"
+        # Ensure gssencmode=disable is present
+        elif "gssencmode=" not in DATABASE_URL:
+            DATABASE_URL += "&gssencmode=disable"
+
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL or "sqlite:///budget_dev.db"
+
+    # Logging
+    LOG_DIR = os.getenv("LOG_DIR", "logs")
+    LOG_FILE = os.getenv("LOG_FILE", "budget_tracker.log")
+
+    # Auto-create tables (optional, useful for dev only)
+    AUTO_CREATE_TABLES = os.getenv("AUTO_CREATE_TABLES", "false")
+
+    # Frontend CORS origins
+    FRONTEND_URLS = os.getenv("FRONTEND_URLS")
+
+    # Mail (if you use Flask-Mail)
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER")
 
 
-# ✅ Choose run mode
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
-    run_migrations_online()
+class DevelopmentConfig(Config):
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = Config.DATABASE_URL or "sqlite:///budget_dev.db"
+
+
+class TestingConfig(Config):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    WTF_CSRF_ENABLED = False
+
+
+class ProductionConfig(Config):
+    DEBUG = False
+    SQLALCHEMY_DATABASE_URI = Config.DATABASE_URL
+    if not SQLALCHEMY_DATABASE_URI:
+        raise RuntimeError("❌ DATABASE_URL must be set for production.")
+
+
+# Default export for Flask CLI
+config_by_name = dict(
+    development=DevelopmentConfig,
+    testing=TestingConfig,
+    production=ProductionConfig,
+)
