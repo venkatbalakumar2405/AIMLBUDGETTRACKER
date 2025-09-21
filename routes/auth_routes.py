@@ -60,6 +60,7 @@ def register():
 
     try:
         email, password = data["email"].lower().strip(), data["password"]
+        current_app.logger.info("📩 Register attempt for %s", email)
 
         if User.query.filter_by(email=email).first():
             return jsonify({"status": "error", "message": "User already exists"}), 400
@@ -75,7 +76,7 @@ def register():
         db.session.add(new_user)
         db.session.commit()
 
-        current_app.logger.info("✅ User registered: %s", email)
+        current_app.logger.info("✅ User registered successfully: %s", email)
         return jsonify({
             "status": "success",
             "message": "User registered successfully",
@@ -85,8 +86,7 @@ def register():
 
     except Exception as e:
         db.session.rollback()
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception("❌ Registration failed")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -99,10 +99,15 @@ def login():
 
     try:
         email, password = data["email"].lower().strip(), data["password"]
+        current_app.logger.info("🔑 Login attempt for %s", email)
 
         user = User.query.filter_by(email=email).first()
-        if not user or not check_password_hash(user.password, password):
-            current_app.logger.warning("❌ Failed login attempt for %s", email)
+        if not user:
+            current_app.logger.warning("❌ No user found for email: %s", email)
+            return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+
+        if not check_password_hash(user.password, password):
+            current_app.logger.warning("❌ Invalid password for %s", email)
             return jsonify({"status": "error", "message": "Invalid email or password"}), 401
 
         access_token = generate_token(user.id, expires_in_hours=1)    # short-lived
@@ -111,6 +116,7 @@ def login():
         expenses = Expense.query.filter_by(user_id=user.id).all()
         summary = build_summary(user, expenses)
 
+        current_app.logger.info("✅ Login successful for %s", email)
         return jsonify({
             "status": "success",
             "message": "Login successful",
@@ -125,8 +131,7 @@ def login():
         }), 200
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception("❌ Login failed for %s", data.get("email"))
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -148,18 +153,20 @@ def refresh_token():
             return jsonify({"status": "error", "message": "Invalid refresh token"}), 401
 
         new_access_token = generate_token(user.id, expires_in_hours=1)
+        current_app.logger.info("🔄 Access token refreshed for user %s", user.email)
         return jsonify({
             "status": "success",
             "access_token": new_access_token
         }), 200
 
     except jwt.ExpiredSignatureError:
+        current_app.logger.warning("⚠️ Refresh token expired")
         return jsonify({"status": "error", "message": "Refresh token expired"}), 401
     except jwt.InvalidTokenError:
+        current_app.logger.warning("⚠️ Invalid refresh token")
         return jsonify({"status": "error", "message": "Invalid refresh token"}), 401
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception("❌ Refresh token failed")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -175,6 +182,7 @@ def get_user_profile(current_user, email: str):
         expenses = Expense.query.filter_by(user_id=current_user.id).all()
         summary = build_summary(current_user, expenses)
 
+        current_app.logger.info("👤 Profile fetched for %s", current_user.email)
         return jsonify({
             "status": "success",
             "email": current_user.email,
@@ -194,6 +202,5 @@ def get_user_profile(current_user, email: str):
         }), 200
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        current_app.logger.exception("❌ Failed to fetch profile for %s", email)
         return jsonify({"status": "error", "message": str(e)}), 500
