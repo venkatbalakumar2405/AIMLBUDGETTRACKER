@@ -14,14 +14,22 @@ def _get_bool(name: str, default: bool = False) -> bool:
     return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _normalize_db_url(url: str) -> str:
+    """Normalize Postgres URLs (Render gives postgres://, SQLAlchemy needs postgresql+psycopg2://)."""
+    if url and url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    return url
+
+
 class Config:
     """Central configuration for Flask application."""
 
     # ================== DATABASE ================== #
-    SQLALCHEMY_DATABASE_URI: str = os.getenv(
+    _raw_db_url = os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db"  # ✅ local fallback
     )
+    SQLALCHEMY_DATABASE_URI: str = _normalize_db_url(_raw_db_url)
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
 
     # ================== SECURITY ================== #

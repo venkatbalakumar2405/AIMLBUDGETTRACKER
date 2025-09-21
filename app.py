@@ -7,6 +7,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, jsonify
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import text
 
 # ================== Project Imports ================== #
 from config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
@@ -21,7 +22,7 @@ from routes.salary_routes import salary_bp
 from routes.trends_routes import trends_bp
 from routes.home_routes import home_bp
 
-# ✅ Ensure UTF-8 logs (fix Windows stdout/stderr crashes with emoji)
+# ✅ Ensure UTF-8 logs (fix Windows stdout/stderr emoji crash)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
@@ -35,6 +36,7 @@ def create_app(config_class: type[Config] = Config) -> Flask:
     _configure_logging(app)
     _log_database_uri(app)
     _initialize_extensions(app)
+    _check_database_connection(app)   # ✅ DB health check
     _configure_cors(app)
     _register_blueprints(app)
     _register_error_handlers(app)
@@ -49,7 +51,7 @@ def _configure_logging(app: Flask) -> None:
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
-    # Avoid duplicate handlers during Flask reloader
+    # Avoid duplicate handlers (Flask reloader adds twice)
     if not app.logger.handlers:
         logging.basicConfig(level=log_level, format=log_format)
         app.logger.setLevel(log_level)
@@ -72,7 +74,7 @@ def _configure_logging(app: Flask) -> None:
 
 
 def _log_database_uri(app: Flask) -> None:
-    """Mask DB password & fix old postgres:// format for SQLAlchemy."""
+    """Mask DB password & normalize postgres:// format."""
     db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", os.getenv("DATABASE_URL", ""))
 
     if not db_uri:
@@ -81,11 +83,11 @@ def _log_database_uri(app: Flask) -> None:
 
     # Fix deprecated postgres:// prefix
     if db_uri.startswith("postgres://"):
-        db_uri = db_uri.replace("postgres://", "postgresql://", 1)
+        db_uri = db_uri.replace("postgres://", "postgresql+psycopg2://", 1)
         app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
-        app.logger.warning("⚠️ Updated DB URI prefix to postgresql://")
+        app.logger.warning("⚠️ Updated DB URI prefix to postgresql+psycopg2://")
 
-    # Mask password for logs
+    # Mask password in logs
     safe_uri = db_uri
     if "@" in db_uri and "://" in db_uri:
         try:
@@ -101,7 +103,7 @@ def _log_database_uri(app: Flask) -> None:
 
 
 def _initialize_extensions(app: Flask) -> None:
-    """Initialize extensions (DB, migrations, mail)."""
+    """Initialize extensions (DB, migrations, etc.)."""
     init_extensions(app)
 
     auto_create = app.config.get(
@@ -113,23 +115,30 @@ def _initialize_extensions(app: Flask) -> None:
             app.logger.info("📦 Auto-created DB tables")
 
 
+def _check_database_connection(app: Flask) -> None:
+    """Verify DB connectivity at startup."""
+    try:
+        with app.app_context():
+            db.session.execute(text("SELECT 1"))
+        app.logger.info("✅ Database connection successful")
+    except Exception as e:
+        app.logger.critical("❌ Database connection failed: %s", e, exc_info=True)
+
+
 def _configure_cors(app: Flask) -> None:
     """Enable strict CORS for frontend apps."""
-    # Default safe origins
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://aibudgettracker.netlify.app",  # ✅ Netlify frontend
     ]
 
-    # Load from config or env
     allowed_origins = app.config.get("FRONTEND_URLS") or os.getenv("FRONTEND_URLS")
     if isinstance(allowed_origins, str):
         allowed_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
     if not allowed_origins:
         allowed_origins = default_origins
 
-    # Final deduplicated list
     allowed_origins = sorted(set(allowed_origins + default_origins))
 
     CORS(
@@ -198,7 +207,8 @@ if __name__ == "__main__":
     debug = (
         debug_config
         if isinstance(debug_config, bool)
-        else str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in ("1", "true", "yes")
+        else str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower()
+        in ("1", "true", "yes")
     )
 
     try:
