@@ -125,7 +125,7 @@ def _check_database_connection(app: Flask) -> None:
 
 
 def _configure_cors(app: Flask) -> None:
-    """Enable strict CORS for frontend apps."""
+    """Enable CORS for Netlify + local dev frontends."""
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -142,14 +142,14 @@ def _configure_cors(app: Flask) -> None:
 
     CORS(
         app,
-        origins=allowed_origins,
+        resources={r"/*": {"origins": allowed_origins}},
         supports_credentials=True,
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         expose_headers=["Content-Type", "Authorization"],
     )
 
-    app.logger.info("🌍 CORS enabled for: %s", ", ".join(allowed_origins))
+    app.logger.info("🌍 CORS enabled for origins: %s", ", ".join(allowed_origins))
 
 
 def _register_blueprints(app: Flask) -> None:
