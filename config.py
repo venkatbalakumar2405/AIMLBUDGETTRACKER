@@ -18,8 +18,15 @@ class Config:
     DATABASE_URL = os.getenv("DATABASE_URL")
 
     # Normalize DB URI (postgres:// → postgresql+psycopg2://)
-    if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    if DATABASE_URL:
+        if DATABASE_URL.startswith("postgres://"):
+            DATABASE_URL = DATABASE_URL.replace(
+                "postgres://", "postgresql+psycopg2://", 1
+            )
+
+        # Ensure SSL is enforced (important for Neon/Render)
+        if "sslmode=" not in DATABASE_URL:
+            DATABASE_URL += "?sslmode=require"
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL or "sqlite:///budget_dev.db"
 

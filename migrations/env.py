@@ -24,7 +24,7 @@ def get_engine():
 
 
 def get_engine_url():
-    """Get database URL for Alembic."""
+    """Get database URL for Alembic from the engine."""
     engine = get_engine()
     try:
         return engine.url.render_as_string(hide_password=False).replace("%", "%%")
