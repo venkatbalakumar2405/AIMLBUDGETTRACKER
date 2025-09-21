@@ -2330,3 +2330,11 @@ AttributeError: 'BackgroundScheduler' object has no attribute 'init_app'
 2025-09-21 09:42:11,347 [INFO] app: ✅ Scheduler sample job executed.
 2025-09-21 09:42:21,343 [INFO] app: ✅ Scheduler sample job executed.
 2025-09-21 09:42:31,368 [INFO] app: ✅ Scheduler sample job executed.
+2025-09-21 12:12:07,536 [INFO] app: 📝 Logging configured (level=INFO)
+2025-09-21 12:12:07,541 [INFO] app: 🔗 Database URI: postgresql+psycopg2://postgres:****@localhost:5432/budget_db
+2025-09-21 12:12:07,997 [INFO] app: ✅ SQLAlchemy initialized
+2025-09-21 12:12:08,002 [INFO] app: ✅ Flask-Migrate initialized
+2025-09-21 12:12:08,003 [INFO] app: ✅ Flask-Mail initialized
+2025-09-21 12:12:08,004 [INFO] app: 🌍 CORS enabled for: http://localhost:5173, https://aibudgettracker.netlify.app, http://127.0.0.1:5173
+2025-09-21 12:12:08,029 [INFO] app: 🧩 Blueprints registered: ['auth', 'budget', 'expenses', 'salaries', 'trends', 'home']
+2025-09-21 12:12:08,165 [INFO] app: ⏰ Scheduler started successfully

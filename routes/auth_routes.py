@@ -8,22 +8,25 @@ from models.user import User
 from models.expense import Expense
 from utils.extensions import db
 from utils.decorators import token_required
-from routes.budget_routes import build_summary   # ✅ Corrected import
+from routes.budget_routes import build_summary
 
 
 # ================== Blueprint Setup ================== #
 auth_bp = Blueprint("auth", __name__)
-# ⚠️ Do NOT enable per-blueprint CORS here (handled globally in app.py)
 
 
 # ================== HELPER FUNCTIONS ================== #
+def _get_jwt_secret():
+    """Safely fetch the JWT secret key from config or env."""
+    secret = current_app.config.get("JWT_SECRET_KEY") or os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY is missing in configuration")
+    return secret
+
+
 def generate_token(user_id: int, expires_in_hours: int | None = None) -> str:
     """Generate a JWT token for a user with expiration."""
     exp_hours = expires_in_hours or int(os.getenv("JWT_EXP_HOURS", 12))
-    secret_key = current_app.config.get("SECRET_KEY")
-
-    if not secret_key:
-        raise RuntimeError("SECRET_KEY is missing in app config")
 
     payload = {
         "user_id": user_id,
@@ -31,7 +34,7 @@ def generate_token(user_id: int, expires_in_hours: int | None = None) -> str:
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=exp_hours),
     }
 
-    token = jwt.encode(payload, secret_key, algorithm="HS256")
+    token = jwt.encode(payload, _get_jwt_secret(), algorithm="HS256")
     return token if isinstance(token, str) else token.decode("utf-8")
 
 
@@ -40,7 +43,10 @@ def get_request_data(required_fields: list[str]):
     data = request.get_json(silent=True) or {}
     missing = [field for field in required_fields if not data.get(field)]
     if missing:
-        return None, jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+        return None, jsonify({
+            "status": "error",
+            "message": f"Missing fields: {', '.join(missing)}"
+        }), 400
     return data, None, None
 
 
@@ -56,7 +62,7 @@ def register():
         email, password = data["email"].lower().strip(), data["password"]
 
         if User.query.filter_by(email=email).first():
-            return jsonify({"error": "User already exists"}), 400
+            return jsonify({"status": "error", "message": "User already exists"}), 400
 
         hashed_password = generate_password_hash(password)
         new_user = User(
@@ -71,6 +77,7 @@ def register():
 
         current_app.logger.info("✅ User registered: %s", email)
         return jsonify({
+            "status": "success",
             "message": "User registered successfully",
             "user_id": new_user.id,
             "email": new_user.email
@@ -79,7 +86,7 @@ def register():
     except Exception as e:
         db.session.rollback()
         current_app.logger.exception("❌ Error in /auth/register: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -93,12 +100,9 @@ def login():
         email, password = data["email"].lower().strip(), data["password"]
 
         user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        if not check_password_hash(user.password, password):
-            current_app.logger.warning("❌ Invalid password attempt for %s", email)
-            return jsonify({"error": "Invalid email or password"}), 401
+        if not user or not check_password_hash(user.password, password):
+            current_app.logger.warning("❌ Failed login attempt for %s", email)
+            return jsonify({"status": "error", "message": "Invalid email or password"}), 401
 
         access_token = generate_token(user.id, expires_in_hours=1)    # short-lived
         refresh_token = generate_token(user.id, expires_in_hours=24) # long-lived
@@ -107,6 +111,8 @@ def login():
         summary = build_summary(user, expenses)
 
         return jsonify({
+            "status": "success",
+            "message": "Login successful",
             "access_token": access_token,
             "refresh_token": refresh_token,
             "profile": {
@@ -119,7 +125,7 @@ def login():
 
     except Exception as e:
         current_app.logger.exception("❌ Error in /auth/login: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -132,23 +138,26 @@ def refresh_token():
     try:
         decoded = jwt.decode(
             data["refresh_token"],
-            current_app.config["SECRET_KEY"],
+            _get_jwt_secret(),
             algorithms=["HS256"]
         )
         user = User.query.get(decoded.get("user_id"))
         if not user:
-            return jsonify({"error": "Invalid refresh token"}), 401
+            return jsonify({"status": "error", "message": "Invalid refresh token"}), 401
 
         new_access_token = generate_token(user.id, expires_in_hours=1)
-        return jsonify({"access_token": new_access_token}), 200
+        return jsonify({
+            "status": "success",
+            "access_token": new_access_token
+        }), 200
 
     except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Refresh token expired, please login again"}), 401
+        return jsonify({"status": "error", "message": "Refresh token expired"}), 401
     except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid refresh token"}), 401
+        return jsonify({"status": "error", "message": "Invalid refresh token"}), 401
     except Exception as e:
         current_app.logger.exception("❌ Error in /auth/refresh: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 # ================== USER PROFILE ================== #
@@ -158,12 +167,13 @@ def get_user_profile(current_user, email: str):
     """Fetch user profile, salary, budget, and expenses (authorized only)."""
     try:
         if current_user.email != email.lower().strip():
-            return jsonify({"error": "Unauthorized access"}), 403
+            return jsonify({"status": "error", "message": "Unauthorized access"}), 403
 
         expenses = Expense.query.filter_by(user_id=current_user.id).all()
         summary = build_summary(current_user, expenses)
 
         return jsonify({
+            "status": "success",
             "email": current_user.email,
             "salary": float(current_user.salary or 0),
             "budget_limit": float(current_user.budget_limit or 0),
@@ -182,4 +192,4 @@ def get_user_profile(current_user, email: str):
 
     except Exception as e:
         current_app.logger.exception("❌ Error in /auth/user/<email>: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": "Internal server error"}), 500

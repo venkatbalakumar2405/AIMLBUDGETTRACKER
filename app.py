@@ -21,7 +21,7 @@ from routes.salary_routes import salary_bp
 from routes.trends_routes import trends_bp
 from routes.home_routes import home_bp
 
-# ✅ Ensure UTF-8 logs (Windows fix for emoji / stdout crashes)
+# ✅ Ensure UTF-8 logs (fix Windows stdout/stderr crashes with emoji)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
@@ -49,22 +49,24 @@ def _configure_logging(app: Flask) -> None:
     log_level = logging.DEBUG if app.debug else logging.INFO
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
-    logging.basicConfig(level=log_level, format=log_format)
-    app.logger.setLevel(log_level)
+    # Avoid duplicate handlers during Flask reloader
+    if not app.logger.handlers:
+        logging.basicConfig(level=log_level, format=log_format)
+        app.logger.setLevel(log_level)
 
-    log_dir = app.config.get("LOG_DIR", os.getenv("LOG_DIR", "logs"))
-    log_file = app.config.get("LOG_FILE", os.getenv("LOG_FILE", "budget_tracker.log"))
-    os.makedirs(log_dir, exist_ok=True)
+        log_dir = app.config.get("LOG_DIR", os.getenv("LOG_DIR", "logs"))
+        log_file = app.config.get("LOG_FILE", os.getenv("LOG_FILE", "budget_tracker.log"))
+        os.makedirs(log_dir, exist_ok=True)
 
-    file_handler = RotatingFileHandler(
-        os.path.join(log_dir, log_file),
-        maxBytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),
-        backupCount=int(os.getenv("LOG_BACKUP_COUNT", 5)),
-        encoding="utf-8",
-    )
-    file_handler.setFormatter(logging.Formatter(log_format))
-    file_handler.setLevel(log_level)
-    app.logger.addHandler(file_handler)
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, log_file),
+            maxBytes=int(os.getenv("LOG_MAX_BYTES", 5 * 1024 * 1024)),
+            backupCount=int(os.getenv("LOG_BACKUP_COUNT", 5)),
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(logging.Formatter(log_format))
+        file_handler.setLevel(log_level)
+        app.logger.addHandler(file_handler)
 
     app.logger.info("📝 Logging configured (level=%s)", logging.getLevelName(log_level))
 
@@ -128,7 +130,7 @@ def _configure_cors(app: Flask) -> None:
         allowed_origins = default_origins
 
     # Final deduplicated list
-    allowed_origins = list(set(allowed_origins + default_origins))
+    allowed_origins = sorted(set(allowed_origins + default_origins))
 
     CORS(
         app,
@@ -155,15 +157,15 @@ def _register_blueprints(app: Flask) -> None:
 
 
 def _register_error_handlers(app: Flask) -> None:
-    """Global error handlers."""
+    """Global error handlers with consistent JSON output."""
     from werkzeug.exceptions import HTTPException
 
     @app.errorhandler(Exception)
     def handle_exception(e):
         if isinstance(e, HTTPException):
-            return jsonify({"error": e.description}), e.code
+            return jsonify({"status": "error", "message": e.description}), e.code
         app.logger.error("❌ Unhandled Exception", exc_info=True)
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 def _configure_scheduler(app: Flask) -> None:
@@ -181,12 +183,11 @@ def _configure_scheduler(app: Flask) -> None:
 if __name__ == "__main__":
     env = os.getenv("APP_ENV", "development").lower()
 
-    if env == "production":
-        config_class = ProductionConfig
-    elif env == "testing":
-        config_class = TestingConfig
-    else:
-        config_class = DevelopmentConfig
+    config_class = {
+        "production": ProductionConfig,
+        "testing": TestingConfig,
+        "development": DevelopmentConfig,
+    }.get(env, DevelopmentConfig)
 
     app = create_app(config_class)
 
@@ -194,14 +195,11 @@ if __name__ == "__main__":
     port = int(app.config.get("FLASK_RUN_PORT", os.getenv("FLASK_RUN_PORT", 5000)))
 
     debug_config = app.config.get("FLASK_DEBUG")
-    if isinstance(debug_config, bool):
-        debug = debug_config
-    else:
-        debug = str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+    debug = (
+        debug_config
+        if isinstance(debug_config, bool)
+        else str(debug_config or os.getenv("FLASK_DEBUG", "true")).lower() in ("1", "true", "yes")
+    )
 
     try:
         app.logger.info(

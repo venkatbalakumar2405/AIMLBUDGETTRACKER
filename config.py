@@ -20,7 +20,7 @@ class Config:
     # ================== DATABASE ================== #
     SQLALCHEMY_DATABASE_URI: str = os.getenv(
         "DATABASE_URL",
-        "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db"  # ✅ local default
+        "postgresql+psycopg2://postgres:Bala123@localhost:5432/budget_db"  # ✅ local fallback
     )
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
 
@@ -29,23 +29,25 @@ class Config:
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
 
     # ================== FRONTEND / CORS ================== #
-    # Supports multiple origins (comma-separated in .env)
     _frontend_urls = os.getenv(
         "FRONTEND_URLS",
         "http://localhost:5173,http://127.0.0.1:5173"
     )
-    FRONTEND_URLS: list[str] = [
+    FRONTEND_URLS: list[str] = sorted(set(
         url.strip() for url in _frontend_urls.split(",") if url.strip()
-    ]
+    ))
 
     # Always include Netlify deploy as a safe fallback
-    if "https://aibudgettracker.netlify.app" not in FRONTEND_URLS:
-        FRONTEND_URLS.append("https://aibudgettracker.netlify.app")
+    FRONTEND_URLS.append("https://aibudgettracker.netlify.app")
+    FRONTEND_URLS = sorted(set(FRONTEND_URLS))
 
     # ================== SERVER SETTINGS ================== #
     FLASK_RUN_HOST: str = os.getenv("FLASK_RUN_HOST", "127.0.0.1")
     FLASK_RUN_PORT: int = int(os.getenv("FLASK_RUN_PORT", 5000))
     FLASK_DEBUG: bool = _get_bool("FLASK_DEBUG", False)
+
+    # ================== DB AUTO-CREATE ================== #
+    AUTO_CREATE_TABLES: bool = _get_bool("AUTO_CREATE_TABLES", False)
 
     # ================== LOGGING ================== #
     LOG_DIR: Path = Path(os.getenv("LOG_DIR", "logs"))
@@ -76,6 +78,7 @@ class DevelopmentConfig(Config):
 
 class TestingConfig(Config):
     TESTING: bool = True
+    DEBUG: bool = False
     SQLALCHEMY_DATABASE_URI: str = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
 
 
